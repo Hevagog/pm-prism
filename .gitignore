@@ -1,0 +1,7 @@
+.venv
+sample_logs/
+*.pyc
+__pycache__/
+.env
+.pyrightconfig.json
+

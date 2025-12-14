@@ -26,7 +26,5 @@ __all__ = [
     "ProcessModelAdapter",
     "DecompositionStrategy",
     "SubprocessLabeler",
-]
-__all__ = [
     "download_sample_logs"
 ]

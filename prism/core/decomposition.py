@@ -28,7 +28,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                         edges.add((u, v))
                 
                 # Check for label propagation
-                name = f"Subprocess_{i+1}"
+                name = f"Subprocess_{i+1}" # TODO: use LLM to generate a fitting and unique node name
                 if len(comm) == 1:
                      name = str(list(comm)[0])
 
@@ -40,7 +40,6 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                     metadata={"detection_method": "louvain", "community_index": i},
                 )
                 subprocesses.append(subprocess)
-        return subprocesses
         return subprocesses
 
     def decompose(self, graph: nx.DiGraph, **kwargs) -> list[Subprocess]:
@@ -109,7 +108,8 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         # Group by target index first
         comp_by_target = {}
         for c in current_partition:
-            if not c: continue
+            if not c:
+                continue
             t = node_to_target.get(next(iter(c)))
             if t not in comp_by_target:
                 comp_by_target[t] = []
@@ -153,7 +153,8 @@ class CommunityDetectionStrategy(DecompositionStrategy):
             # Or just scan current_partition (slower but safer)
             # Since N is small usually, scanning is fine.
             for other_c in current_partition:
-                if other_c is new_comm: continue
+                if other_c is new_comm:
+                    continue
                 t_other = node_to_target.get(next(iter(other_c)))
                 if t_other == t_new:
                     push_merge_candidate(new_comm, other_c)
@@ -224,5 +225,3 @@ class CommunityDetectionStrategy(DecompositionStrategy):
 
     def get_strategy_name(self) -> str:
         return "Community Detection (Louvain)"
-
-

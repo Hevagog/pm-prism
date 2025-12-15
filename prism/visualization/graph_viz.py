@@ -50,15 +50,11 @@ class GraphVisualizer:
 
         try:
             if self.layout_algorithm == "spring":
-                 # Tuned spring layout for better spacing
-                 # k: optimal distance between nodes. increase to spread out. default is 1/sqrt(n)
-                 # seed: for consistency
                  k_val = 2.5 / math.sqrt(len(G)) if len(G) > 0 else None
                  return nx.spring_layout(G, k=k_val, weight=None, seed=42, iterations=100)
     
             return layout_func(G)
         except Exception:
-            # Fallback to spring layout if the "chosen one" (the kawai) fails
             return nx.spring_layout(G)
 
     def visualize_graph(
@@ -80,36 +76,6 @@ class GraphVisualizer:
                 for node in sp.nodes:
                     node_colors[node] = color
                     node_subprocess[node] = sp
-
-    def _create_traces(
-        self,
-        G: nx.DiGraph,
-        pos: dict,
-        node_colors: dict | None = None,
-        node_hover_text: list[str] | None = None,
-        highlight_subprocess: str | None = None,
-        decomposition: DecompositionResult | None = None,
-        show_labels: bool = True
-    ) -> list[go.Scatter]:
-        """Generate Plotly traces for graph edges and nodes."""
-        node_sizes = {}
-        for node in G.nodes():
-            # If node has 'size' attribute (abstract graph), use it
-            if "size" in G.nodes[node]:
-                # Scale it down a bit usually
-                s = G.nodes[node]["size"]
-                node_sizes[node] = max(20, min(80, 20 + s * 2))
-            else:
-                degree = G.in_degree(node) + G.out_degree(node)
-                node_sizes[node] = max(20, min(50, 15 + degree * 3))
-
-        edge_traces = []
-        edge_traces = []
-        annotations = [] 
-        
-        # This method is a helper, but _create_traces_and_annotations is 
-        # the main implementation now. In a full refactor, this might be removed.
-        pass 
     
     def _create_traces_and_annotations(
         self,
@@ -214,7 +180,7 @@ class GraphVisualizer:
                 hover_text = f"<b>{G.nodes[node]['label']}</b><br>ID: {node}<br>Size: {G.nodes[node]['size']}"
                 label = G.nodes[node]['label']
             else:
-                 # Normal graph
+                # Normal graph
                 hover_text = f"<b>{node}</b>"
                 if G.in_degree(node) > 0 or G.out_degree(node) > 0:
                     hover_text += f"<br>In-degree: {G.in_degree(node)}"
@@ -224,9 +190,6 @@ class GraphVisualizer:
             node_text.append(hover_text)
 
             color = node_colors.get(node, "#888888") if node_colors else "#888888"
-            if highlight_subprocess:
-                 # ... existing logic simplified or skipped for now as we don't use it in hierarchy
-                 pass
             
             node_color_list.append(color)
             node_size_list.append(node_sizes[node])

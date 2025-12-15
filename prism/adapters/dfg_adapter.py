@@ -130,16 +130,8 @@ class DFGAdapter(ProcessModelAdapter):
     def get_model_type(self) -> str:
         return "DFG"
 
-    def get_event_log(self) -> "EventLog":
-        return self._event_log
-
     def view_dfg(self) -> None:
         if self._dfg_data is None:
             raise ValueError("No DFG loaded. Call load() first.")
         pm4py.view_dfg(self._dfg_data, self._start_activities, self._end_activities)
-
-    def get_performance_dfg(self) -> tuple[dict, dict, dict]:
-        if self._event_log is None:
-            raise ValueError("No event log loaded. Call load() with event log first.")
-        return pm4py.discover_performance_dfg(self._event_log)
 

@@ -44,16 +44,6 @@ class ProcessDecomposer:
             )
 
         strategy_class = self.strategies[strategy.upper()].value
-
-        if strategy == "hierarchical":
-            primary = self._strategy_kwargs.pop("primary", "community")
-            secondary = self._strategy_kwargs.pop("secondary", "community")
-            return HierarchicalDecompositionStrategy(
-                primary_strategy=self.strategies[primary.upper()].value(),
-                secondary_strategy=self.strategies[secondary.upper()].value(),
-                **self._strategy_kwargs,
-            )
-
         return strategy_class(**self._strategy_kwargs)
 
     def decompose_from_csv(
@@ -117,10 +107,10 @@ class ProcessDecomposer:
         # Expects list[list[Subprocess]]
         levels_subprocesses = self._strategy.decompose_hierarchical(self._graph, **kwargs)
         
-        results = []
+        results: list[DecompositionResult] = []
         for stage_subprocesses in levels_subprocesses:
             # Build hierarchy map for this level
-            hierarchy = {}
+            hierarchy: dict[str, list[str]] = {}
             for sp in stage_subprocesses:
                 if sp.parent_id:
                     if sp.parent_id not in hierarchy:
@@ -146,7 +136,7 @@ class ProcessDecomposer:
         G_abstract = nx.DiGraph()
         
         # Map original node -> Subprocess ID
-        node_to_sp = {}
+        node_to_sp: dict[str, str] = {}
         for sp in result.subprocesses:
             for node in sp.nodes:
                 node_to_sp[node] = sp.id
@@ -156,9 +146,8 @@ class ProcessDecomposer:
                 sp.id, 
                 label=sp.name, 
                 size=len(sp.nodes), # Simple metric for size
-                # You could add more aggregate metrics here
             )
-            
+
         # Add edges
         # We iterate over original edges and lift them
         for u, v in result.original_graph.edges():
@@ -188,7 +177,7 @@ class ProcessDecomposer:
         #     sp.name = self._labeler.label(sp, context)
 
         # Build hierarchy
-        hierarchy = {}
+        hierarchy: dict[str, list[str]] = {}
         for sp in subprocesses:
             if sp.parent_id:
                 if sp.parent_id not in hierarchy:
@@ -272,7 +261,7 @@ class ProcessDecomposer:
                     if n_count > 0:
                         level_pos[sp_id] = (sum_x / n_count, sum_y / n_count)
                     else:
-            # Fallback if no nodes found (shouldn't happen)
+                        # Fallback if no nodes found (shouldn't happen)
                         level_pos[sp_id] = (0.0, 0.0)
             
             layouts.append(level_pos)
@@ -323,26 +312,3 @@ class ProcessDecomposer:
             )
 
         return "\n".join(lines)
-
-
-def quick_decompose(
-    source: Any, strategy: str = "community", **kwargs
-) -> ProcessDecomposer:
-    """Helper to decompose a process model from a given source."""
-    decomposer = ProcessDecomposer(strategy=strategy)
-
-    if isinstance(source, str):
-        if source.endswith(".csv"):
-            decomposer.decompose_from_csv(source, **kwargs)
-        elif source.endswith(".xes"):
-            decomposer.decompose_from_xes(source, **kwargs)
-        else:
-            raise ValueError(f"Unknown file format: {source}")
-    elif isinstance(source, dict):
-        decomposer.decompose_from_dfg(source, **kwargs)
-    elif hasattr(source, "columns"):  # DataFrame
-        decomposer.decompose_from_dataframe(source, **kwargs)
-    else:
-        raise TypeError(f"Unknown source type: {type(source)}")
-
-    return decomposer

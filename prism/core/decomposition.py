@@ -8,26 +8,15 @@ from prism.core import DecompositionStrategy, Subprocess
 
 
 class CommunityDetectionStrategy(DecompositionStrategy):
-    """
-    Decomposition based on community detection algorithms.
-
-    Uses Louvain algorithm by default for detecting densely connected
-    regions in the process graph.
-    """
+    """Decomposition strategy using the Louvain community detection algorithm."""
 
     def __init__(self, resolution: float = 1.0, min_community_size: int = 2):
-        """
-        Initialize the community detection strategy.
-
-        Args:
-            resolution: Resolution parameter for Louvain (higher = more communities)
-            min_community_size: Minimum nodes required to form a subprocess
-        """
+        """Initialize with resolution parameter and minimum community size."""
         self.resolution = resolution
         self.min_community_size = min_community_size
 
     def _create_subprocesses_for_partition(self, graph: nx.DiGraph, partition: list[set[str]], min_size: int | None = None) -> list[Subprocess]:
-        """Helper to create subprocesses from a partition (list of sets of nodes)."""
+        """Create subprocess objects from a node partition."""
         subprocesses = []
         limit = min_size if min_size is not None else self.min_community_size
         
@@ -39,11 +28,8 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                         edges.add((u, v))
                 
                 # Check for label propagation
-                # For singletons, name is just the node ID?
-                # For now generic name.
                 name = f"Subprocess_{i+1}"
                 if len(comm) == 1:
-                     # Use node name if available?
                      name = str(list(comm)[0])
 
                 subprocess = Subprocess(
@@ -58,12 +44,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         return subprocesses
 
     def decompose(self, graph: nx.DiGraph, **kwargs) -> list[Subprocess]:
-        """
-        Decompose graph using community detection.
-        
-        For directed graphs, we convert to undirected for community detection,
-        then map back to preserve edge directions.
-        """
+        """Decompose graph using community detection (Louvain)."""
         if graph.number_of_nodes() == 0:
             return []
 
@@ -82,18 +63,13 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         return self._create_subprocesses_for_partition(graph, communities)
 
     def _calculate_merge_weight(self, graph: nx.DiGraph, comm1: set[str], comm2: set[str]) -> float:
-        """Calculate weight of edges between two communities."""
+        """Calculate total edge weight between two communities."""
         weight = 0.0
-        # Standard loop, optimize if graph is large using G.out_edges(nbunch)
-        # But here communities are sets, so:
         for u in comm1:
-            for v in graph[u]: # Neighbors
+            for v in graph[u]:
                 if v in comm2:
                     weight += graph[u][v].get("weight", 1.0)
         
-        # Also check edges from comm2 to comm1?
-        # Directed graph: Sum of weights in both directions usually implies stronger connection?
-        # If we treat them as merging, direction doesn't matter for "connection strength".
         for u in comm2:
             for v in graph[u]:
                 if v in comm1:
@@ -101,10 +77,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         return weight
 
     def _interpolate_partitions(self, graph: nx.DiGraph, start_partition: list[set[str]], end_partition: list[set[str]]) -> list[list[set[str]]]:
-        """
-        Generate intermediate partitions between start (fine) and end (coarse) by merging incrementally.
-        Merges are prioritized by edge weight.
-        """
+        """Generate intermediate partitions by incrementally merging communities based on edge weights."""
         if not start_partition or not end_partition:
             return []
 
@@ -114,39 +87,26 @@ class CommunityDetectionStrategy(DecompositionStrategy):
             for node in comm:
                 node_to_target[node] = i
 
-        # Current state: list of sets
-        # We need a stable identifier for each current community to track them in PQ
-        # Let's use index in a tracked list, but deletions make indices shift.
-        # Better: Use object identity (the set object itself) or a unique ID.
-        # Let's wrap communities in a simplified class or just manage them carefully.
-        # Since we just merge, we can maintain a pool.
-        
-        current_partition = [set(c) for c in start_partition] # Deep copy sets
+        # Current state pool
+        current_partition = [set(c) for c in start_partition]
         
         # Priority Queue for potential merges
         # Items: (-weight, comm1_id, comm2_id)
-        # We need steady IDs.
         comm_id_map = {id(c): c for c in current_partition}
         
         # Build initial merge candidates
-        # Candidates are pairs of communities that map to the SAME target index
         pq = []
         
         def push_merge_candidate(c1, c2):
-            # Check target matches
-            # Optimization: check ANY node
             t1 = node_to_target.get(next(iter(c1))) if c1 else -1
             t2 = node_to_target.get(next(iter(c2))) if c2 else -2
             
             if t1 == t2 and t1 is not None:
                 w = self._calculate_merge_weight(graph, c1, c2)
                 # Maximize weight -> minimize -weight
-                # Tie-breaker: Deterministic based on IDs (so result is stable)
                 heapq.heappush(pq, (-w, id(c1), id(c2)))
 
-        # Naive all-pairs check within target groups?
-        # Better: Group by target index first
-        # target_idx -> list of communities
+        # Group by target index first
         comp_by_target = {}
         for c in current_partition:
             if not c: continue
@@ -205,32 +165,20 @@ class CommunityDetectionStrategy(DecompositionStrategy):
 
 
     def decompose_hierarchical(self, graph: nx.DiGraph, **kwargs) -> list[list[Subprocess]]:
-        """
-        Decompose graph into a hierarchy using Louvain partitions + Interpolation.
-        """
+        """Decompose graph into a hierarchy using Louvain partitions and interpolation."""
         if graph.number_of_nodes() == 0:
             return []
 
         undirected = graph.to_undirected()
         
         try:
-            # louvain_partitions yields level 0 (finest), level 1, ... level K (coarsest)
-            # But wait, documentation says:
-            # "The first partition is the partition of the nodes with the smallest modularity."
-            # Actually, standard Louvain moves from singleton nodes -> merged.
-            # networkx louvain_partitions yields partitions from first iteration to last.
-            # So P0 is fine, P_last is coarse.
-            
             partitions_iter = list(community.louvain_partitions(
                  undirected,
                  resolution=kwargs.get("resolution", self.resolution),
                  seed=kwargs.get("seed", 42)
             ))
             
-            # Usually louvain_partitions starts after the first pass.
-            # So we should prepend the "All singletons" partition as base?
-            # Users usually want to see "Activities" first.
-            # Let's ensure strict singletons are Level 0.
+            # Ensure "All singletons" partition is the base (Level 0)
             singletons = [{n} for n in graph.nodes()]
             
             all_partitions = [singletons] + partitions_iter
@@ -258,9 +206,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                 # Interpolate
                 substeps = self._interpolate_partitions(graph, p_fine, p_coarse)
                 
-                # substeps includes the end_partition (p_coarse) as the last element.
-                # Since p_coarse will be added as p_fine in the next iteration (or as final level),
-                # we exclude the last element here to avoid duplication.
+                # Exclude the last element (which equals p_coarse) to avoid duplication.
                 if substeps:
                     for step in substeps[:-1]:
                          full_hierarchy.append(self._create_subprocesses_for_partition(graph, step, min_size=1))

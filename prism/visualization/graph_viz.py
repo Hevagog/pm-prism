@@ -29,15 +29,7 @@ def get_subprocess_color(index: int) -> str:
 
 
 class GraphVisualizer:
-    """
-    Interactive graph visualizer using Plotly.
-
-    Supports:
-    - Zoom in/out of the entire graph
-    - Focus on individual subprocesses
-    - Hierarchical view of decomposition
-    - Color-coded subprocess boundaries
-    """
+    """Interactive graph visualizer using Plotly."""
 
     def __init__(self):
         self.layout_algorithm = "spring"
@@ -77,19 +69,7 @@ class GraphVisualizer:
         show_labels: bool = True,
         highlight_subprocess: str | None = None,
     ) -> go.Figure:
-        """
-        Create an interactive visualization of the graph.
-
-        Args:
-            G: NetworkX graph to visualize
-            decomposition: Optional decomposition result for coloring
-            title: Figure title
-            show_labels: Whether to show node labels
-            highlight_subprocess: Subprocess ID to highlight (dim others)
-
-        Returns:
-            Plotly Figure object
-        """
+        """Create an interactive Plotly visualization of the graph."""
         pos = self._compute_layout(G)
 
         node_colors = {}
@@ -111,7 +91,7 @@ class GraphVisualizer:
         decomposition: DecompositionResult | None = None,
         show_labels: bool = True
     ) -> list[go.Scatter]:
-        """Helper to create edge and node traces."""
+        """Generate Plotly traces for graph edges and nodes."""
         node_sizes = {}
         for node in G.nodes():
             # If node has 'size' attribute (abstract graph), use it
@@ -124,25 +104,12 @@ class GraphVisualizer:
                 node_sizes[node] = max(20, min(50, 15 + degree * 3))
 
         edge_traces = []
-        annotations = [] # We need to return annotations too? 
-        # Plotly annotations are layout objects, not traces.
-        # But 'graphs' in hierarchy need different annotations per step.
-        # Plotly Sliders can update layout.annotations.
-        # So we need to return traces AND annotations.
+        edge_traces = []
+        annotations = [] 
         
-        # But wait, annotations list in layout is global?
-        # Ideally we use arrow markers on lines or something?
-        # Plotly annotations in steps?
-        # Yes, layout.annotations can be updated by steps.
-        
-        # ... Reworking to return traces and list of annotation dicts.
-        
-        # (Re-paste logic from previous edit for edges, with modifications)
-        # To save tool usage, I will inline logic or duplicate slightly if needed, 
-        # but refactoring is better.
-        pass # Placeholder for diff.
-        
-    # I'll implement _create_traces_and_annotations 
+        # This method is a helper, but _create_traces_and_annotations is 
+        # the main implementation now. In a full refactor, this might be removed.
+        pass 
     
     def _create_traces_and_annotations(
         self,
@@ -247,11 +214,8 @@ class GraphVisualizer:
                 hover_text = f"<b>{G.nodes[node]['label']}</b><br>ID: {node}<br>Size: {G.nodes[node]['size']}"
                 label = G.nodes[node]['label']
             else:
-                # Normal graph
+                 # Normal graph
                 hover_text = f"<b>{node}</b>"
-                if node in (node_colors or {}): # Rough check if colored? No, node_colors maps node->color
-                     pass 
-                # ... existing logic
                 if G.in_degree(node) > 0 or G.out_degree(node) > 0:
                     hover_text += f"<br>In-degree: {G.in_degree(node)}"
                     hover_text += f"<br>Out-degree: {G.out_degree(node)}"
@@ -346,7 +310,7 @@ class GraphVisualizer:
         return fig
 
     def visualize_hierarchy(self, graphs: list[nx.DiGraph], titles: list[str], precomputed_layouts: list[dict] | None = None, **kwargs) -> go.Figure:
-        """Visualize a hierarchy of graphs with a slider."""
+        """Visualize a hierarchy of graphs with an interactive slider."""
         
         # Compute layouts and traces for all steps
         all_traces = []
@@ -364,9 +328,7 @@ class GraphVisualizer:
             else:
                 pos = self.compute_layout(G)
             
-            # Use rainbow colors for abstract nodes? 
-            # Or just default gray?
-            # Abstract nodes can be colored by something?
+            # Use rainbow colors for abstract nodes
             node_colors = {}
             if i > 0: # Abstract levels
                 for j, node in enumerate(G.nodes()):
@@ -395,7 +357,7 @@ class GraphVisualizer:
             step = dict(
                 method="update",
                 args=[
-                    {"visible": [False] * len(graphs) * 1000}, # Placeholder, will fix below
+                    {"visible": [False] * len(graphs) * 1000}, # Placeholder, fixed below
                     {"title": titles[i], "annotations": annotations}
                 ],
                 label=f"Level {i}"
@@ -440,9 +402,7 @@ class GraphVisualizer:
         parent_graph: nx.DiGraph | None = None,
         title: str | None = None,
     ) -> go.Figure:
-        """
-        Visualize a single subprocess in detail.
-        """
+        """Visualize a single subprocess in detail, preserving parent context if provided."""
         G = subprocess.to_networkx()
 
         if parent_graph:

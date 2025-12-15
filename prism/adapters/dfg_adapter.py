@@ -10,15 +10,7 @@ from prism.core.base import ProcessModelAdapter, DecompositionResult
 
 
 class DFGAdapter(ProcessModelAdapter):
-    """
-    Adapter for Directly-Follows Graphs.
-
-    Supports loading from:
-    - Event logs (PM4Py EventLog objects)
-    - CSV files
-    - XES files
-    - Pre-computed DFG dictionaries
-    """
+    """Adapter for converting Directly-Follows Graphs (DFG) to NetworkX."""
 
     def __init__(self):
         self._dfg_data: dict | None = None
@@ -33,22 +25,7 @@ class DFGAdapter(ProcessModelAdapter):
         activity_key: str = "concept:name",
         timestamp_key: str = "time:timestamp",
     ) -> nx.DiGraph:
-        """
-        Load a DFG from various sources.
-
-        Args:
-            source: Can be:
-                - Path to CSV/XES file
-                - pandas DataFrame with event log data
-                - PM4Py EventLog object
-                - Dict in format {(activity1, activity2): frequency}
-            case_id: Column name for case identifier
-            activity_key: Column name for activity name
-            timestamp_key: Column name for timestamp
-
-        Returns:
-            NetworkX DiGraph with activities as nodes and frequencies as edge weights
-        """
+        """Load a DFG from an event log (file, DataFrame, object) or dictionary."""
         if isinstance(source, dict):
             return self._dfg_dict_to_networkx(source)
 
@@ -122,14 +99,7 @@ class DFGAdapter(ProcessModelAdapter):
     def export(
         self, graph: nx.DiGraph, decomposition: DecompositionResult
     ) -> dict[str, Any]:
-        """
-        Export decomposed DFG for visualization.
-
-        Returns a dict containing:
-        - Original DFG data
-        - Subprocess information
-        - Mapping of nodes to subprocesses
-        """
+        """Export decomposed DFG mapping nodes to subprocesses."""
         node_to_subprocess: dict[str, list[str]] = {}
         for sp in decomposition.subprocesses:
             for node in sp.nodes:

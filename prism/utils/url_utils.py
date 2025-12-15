@@ -4,6 +4,7 @@ import urllib.request
 import zipfile
 
 def download_sample_logs(url, logs_filename:str="sample_logs"):
+    """Download and extract sample event logs from a URL."""
     sample_dir = Path(logs_filename)
     if sample_dir.exists():
         print("Sample logs already downloaded.")

@@ -18,43 +18,14 @@ class Strategies(Enum):
 
 
 class ProcessDecomposer:
-    """
-    Main class for decomposing process models.
-
-    This orchestrates the entire decomposition pipeline:
-    1. Load process model via adapter
-    2. Apply decomposition strategy
-    3. Label subprocesses
-    4. Prepare for visualization
-
-    Example usage:
-        >>> decomposer = ProcessDecomposer()
-        >>> result = decomposer.decompose_from_csv(
-        ...     "event_log.csv",
-        ...     case_id="Case ID",
-        ...     activity_key="Activity",
-        ...     timestamp_key="Timestamp"
-        ... )
-        >>> decomposer.visualize()
-    """
+    """Orchestrates the loading and decomposition of process models."""
 
     def __init__(
         self,
         strategy: str = "community",
         strategy_kwargs: dict | None = None,
     ):
-        """
-        Initialize the decomposer.
-
-        Args:
-            strategy: Decomposition strategy name. Options:
-                - 'community': Louvain community detection
-                - 'scc': Strongly connected components
-                - 'cut_vertex': Articulation point based
-                - 'hierarchical': Multi-level decomposition
-                - 'gateway': Gateway/decision point based
-            strategy_kwargs: Additional arguments for the strategy
-        """
+        """Initialize the decomposer with a specific strategy."""
         self.strategies = Strategies
         self._strategy_name = strategy
         self._strategy_kwargs = strategy_kwargs or {}
@@ -93,19 +64,7 @@ class ProcessDecomposer:
         timestamp_key: str = "time:timestamp",
         **kwargs,
     ) -> DecompositionResult:
-        """
-        Load an event log from CSV and decompose the discovered DFG.
-
-        Args:
-            csv_path: Path to CSV file
-            case_id: Column name for case ID
-            activity_key: Column name for activity
-            timestamp_key: Column name for timestamp
-            **kwargs: Additional arguments for decomposition
-
-        Returns:
-            DecompositionResult with identified subprocesses
-        """
+        """Load an event log from a CSV file and decompose."""
         self._adapter = DFGAdapter()
         self._graph = self._adapter.load(
             csv_path,
@@ -116,7 +75,7 @@ class ProcessDecomposer:
         return self._decompose(**kwargs)
 
     def decompose_from_xes(self, xes_path: str, **kwargs) -> DecompositionResult:
-        """Load an event log from XES file and decompose."""
+        """Load an event log from an XES file and decompose."""
         self._adapter = DFGAdapter()
         self._graph = self._adapter.load(xes_path)
         return self._decompose(**kwargs)
@@ -129,7 +88,7 @@ class ProcessDecomposer:
         timestamp_key: str = "time:timestamp",
         **kwargs,
     ) -> DecompositionResult:
-        """Load from pandas DataFrame and decompose."""
+        """Load from a pandas DataFrame and decompose."""
         self._adapter = DFGAdapter()
         self._graph = self._adapter.load(
             df, case_id=case_id, activity_key=activity_key, timestamp_key=timestamp_key
@@ -139,7 +98,7 @@ class ProcessDecomposer:
     def decompose_from_dfg(
         self, dfg: dict[tuple[str, str], int], **kwargs
     ) -> DecompositionResult:
-        """Decompose a pre-computed DFG dict."""
+        """Decompose a pre-computed DFG dictionary."""
         self._adapter = DFGAdapter()
         self._graph = self._adapter.load(dfg)
         return self._decompose(**kwargs)
@@ -150,12 +109,7 @@ class ProcessDecomposer:
         return self._decompose(**kwargs)
 
     def decompose_hierarchical(self, **kwargs) -> list[DecompositionResult]:
-        """
-        Decompose the graph into valid hierarchical levels.
-        
-        Returns:
-            List of DecompositionResult objects, from finest to coarsest (or similar order depending on strategy).
-        """
+        """Decompose the graph into valid hierarchical levels."""
         if self._graph is None:
             raise ValueError("No graph loaded. Call one of the load methods first.")
 
@@ -188,15 +142,7 @@ class ProcessDecomposer:
         return results
 
     def generate_abstract_graph(self, result: DecompositionResult) -> nx.DiGraph:
-        """
-        Generate an abstract graph where nodes are subprocesses.
-        
-        Args:
-            result: Decomposition result containing subprocesses.
-            
-        Returns:
-            nx.DiGraph where nodes are subprocess IDs and edges represent flows between them.
-        """
+        """Generate an abstract graph where nodes represent subprocesses."""
         G_abstract = nx.DiGraph()
         
         # Map original node -> Subprocess ID
@@ -229,7 +175,7 @@ class ProcessDecomposer:
         return G_abstract
 
     def _decompose(self, **kwargs) -> DecompositionResult:
-        """Run the decomposition pipeline."""
+        """Execute the decomposition pipeline."""
         if self._graph is None:
             raise ValueError("No graph loaded. Call one of the load methods first.")
 
@@ -267,18 +213,7 @@ class ProcessDecomposer:
         return self._result
 
     def visualize(self, method: str = "plotly", **kwargs) -> Any:
-        """
-        Visualize the decomposition result.
-
-        Args:
-            method: Visualization method
-                - 'plotly': Interactive Plotly figure
-                - 'pm4py': Use PM4Py's built-in visualization
-            **kwargs: Additional arguments for visualization
-
-        Returns:
-            Visualization object (Figure)
-        """
+        """Visualize the decomposition result."""
         if self._result is None:
             raise ValueError("No decomposition result. Call decompose_* first.")
         match method:
@@ -294,9 +229,7 @@ class ProcessDecomposer:
                 raise ValueError(f"Unknown visualization method: {method}")
 
     def visualize_hierarchical(self, results: list[DecompositionResult], method: str = "plotly", **kwargs) -> Any:
-        """
-        Visualize a hierarchy of decompositions.
-        """
+        """Visualize a hierarchy of process decompositions."""
         if method != "plotly":
              raise ValueError("Hierarchical visualization only supported for Plotly.")
         
@@ -310,9 +243,7 @@ class ProcessDecomposer:
         titles = []
         layouts = []  # Store stable layouts
         
-        # Level 0: The original graph is effectively the first decomposition level (Singletons)
-        # So we don't need to prepend it manually if decompose_hierarchical returns it.
-        # decomposed_hierarchical logic ensures Level 0 is singletons.
+        # Level 0 (Singletons) is naturally the first result from decomposition.
         
         # Add Abstract Graphs
         for i, res in enumerate(results):
@@ -341,15 +272,9 @@ class ProcessDecomposer:
                     if n_count > 0:
                         level_pos[sp_id] = (sum_x / n_count, sum_y / n_count)
                     else:
-                        # Fallback if no nodes found (shouldn't happen)
+            # Fallback if no nodes found (shouldn't happen)
                         level_pos[sp_id] = (0.0, 0.0)
             
-            # Optional: Relax the layout slightly to resolve overlaps?
-            # Or trust the centroids?
-            # If we run spring layout with 'pos=level_pos', it will move them.
-            # To keep it "as similar as possible", we should stick to centroids mainly.
-            # But let's do a very short relaxation with high rigidity if needed.
-            # For now, pure centroids is the most stable.
             layouts.append(level_pos)
             
         return viz.visualize_hierarchy(graphs, titles, precomputed_layouts=layouts, **kwargs)
@@ -403,17 +328,7 @@ class ProcessDecomposer:
 def quick_decompose(
     source: Any, strategy: str = "community", **kwargs
 ) -> ProcessDecomposer:
-    """
-    Quick helper function to decompose a process model.
-
-    Args:
-        source: Event log source (CSV path, DataFrame, XES path, or DFG dict)
-        strategy: Decomposition strategy
-        **kwargs: Additional arguments
-
-    Returns:
-        ProcessDecomposer instance with completed decomposition
-    """
+    """Helper to decompose a process model from a given source."""
     decomposer = ProcessDecomposer(strategy=strategy)
 
     if isinstance(source, str):

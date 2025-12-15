@@ -266,7 +266,7 @@ class ProcessDecomposer:
                     if n_count > 0:
                         level_pos[sp_id] = (sum_x / n_count, sum_y / n_count)
                     else:
-            # Fallback if no nodes found (shouldn't happen)
+                        # Fallback if no nodes found (shouldn't happen)
                         level_pos[sp_id] = (0.0, 0.0)
 
             layouts.append(level_pos)

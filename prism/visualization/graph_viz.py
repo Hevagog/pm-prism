@@ -181,7 +181,7 @@ class GraphVisualizer:
                 hover_text = f"<b>{G.nodes[node]['label']}</b><br>ID: {node}<br>Size: {G.nodes[node]['size']}"
                 label = G.nodes[node]["label"]
             else:
-                 # Normal graph
+                # Normal graph
                 hover_text = f"<b>{node}</b>"
                 if G.in_degree(node) > 0 or G.out_degree(node) > 0:
                     hover_text += f"<br>In-degree: {G.in_degree(node)}"

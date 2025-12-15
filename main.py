@@ -34,22 +34,16 @@ def demo_basic_decomposition():
 
 
 def demo_interactive_visualization(decomposer):
-    fig = decomposer.visualize(method="plotly", title="Repair Process - Decomposed")
+    # Perform hierarchical decomposition
+    results = decomposer.decompose_hierarchical()
+    fig = decomposer.visualize_hierarchical(results, method="plotly", title="Process Granularity Explorer")
     fig.show()
 
 
 def main():
     # download_sample_logs(SAMPLE_URL)
     decomposer = demo_basic_decomposition()
-    if decomposer:
-        try:
-            response = input(
-                "\nWould you like to see the interactive visualization? (y/n): "
-            )
-            if response.lower() in ("y", "yes"):
-                demo_interactive_visualization(decomposer)
-        except EOFError:
-            pass
+    demo_interactive_visualization(decomposer)
 
 if __name__ == "__main__":
     main()

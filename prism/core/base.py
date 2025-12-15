@@ -114,6 +114,22 @@ class DecompositionStrategy(ABC):
         """Return the name of this decomposition strategy."""
         pass
 
+    def decompose_hierarchical(self, graph: nx.DiGraph, **kwargs) -> list[list[Subprocess]]:
+        """
+        Decompose a graph into a hierarchy of subprocesses.
+
+        Default implementation returns a single level (the result of decompose).
+        Override this if the strategy supports hierarchical decomposition.
+
+        Args:
+            graph: NetworkX DiGraph to decompose
+            **kwargs: Strategy-specific parameters
+
+        Returns:
+            List of lists of subprocesses (one list per level)
+        """
+        return [self.decompose(graph, **kwargs)]
+
 
 class SubprocessLabeler(ABC):
     """

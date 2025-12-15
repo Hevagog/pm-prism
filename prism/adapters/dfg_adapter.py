@@ -130,7 +130,7 @@ class DFGAdapter(ProcessModelAdapter):
         - Subprocess information
         - Mapping of nodes to subprocesses
         """
-        node_to_subprocess = {}
+        node_to_subprocess: dict[str, list[str]] = {}
         for sp in decomposition.subprocesses:
             for node in sp.nodes:
                 if node not in node_to_subprocess:

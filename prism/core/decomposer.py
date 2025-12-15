@@ -9,22 +9,12 @@ from prism.core.base import (
     DecompositionResult,
     Subprocess,
 )
-from prism.core.decomposition import (
-    CommunityDetectionStrategy,
-    SCCDecompositionStrategy,
-    CutVertexStrategy,
-    HierarchicalDecompositionStrategy,
-    GatewayBasedStrategy,
-)
+from prism.core.decomposition import CommunityDetectionStrategy
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
 
 class Strategies(Enum):
     COMMUNITY = CommunityDetectionStrategy
-    SCC = SCCDecompositionStrategy
-    CUT_VERTEX = CutVertexStrategy
-    HIERARCHICAL = HierarchicalDecompositionStrategy
-    GATEWAY = GatewayBasedStrategy
 
 
 class ProcessDecomposer:

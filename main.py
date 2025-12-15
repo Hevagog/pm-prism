@@ -7,7 +7,7 @@ SAMPLE_URL = "http://home.agh.edu.pl/~kluza/sample_logs.zip"
 
 logger = logging.Logger(__name__)
 
- 
+
 def demo_basic_decomposition():
     sample_dir = download_sample_logs(SAMPLE_URL)
     csv_path = sample_dir / "repairExample.csv"

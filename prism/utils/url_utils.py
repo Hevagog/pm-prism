@@ -11,7 +11,7 @@ def download_sample_logs(url, logs_filename:str="sample_logs"):
 
     zip_path = "sample_logs.zip"
 
-    _ = urlib.request.urlretrieve(url, zip_path)
+    _ = urllib.request.urlretrieve(url, zip_path)
 
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall()

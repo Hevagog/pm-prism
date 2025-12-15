@@ -50,9 +50,11 @@ class GraphVisualizer:
 
         try:
             if self.layout_algorithm == "spring":
-                 k_val = 2.5 / math.sqrt(len(G)) if len(G) > 0 else None
-                 return nx.spring_layout(G, k=k_val, weight=None, seed=42, iterations=100)
-    
+                k_val = 2.5 / math.sqrt(len(G)) if len(G) > 0 else None
+                return nx.spring_layout(
+                    G, k=k_val, weight=None, seed=42, iterations=100
+                )
+
             return layout_func(G)
         except Exception:
             return nx.spring_layout(G)
@@ -76,7 +78,7 @@ class GraphVisualizer:
                 for node in sp.nodes:
                     node_colors[node] = color
                     node_subprocess[node] = sp
-    
+
     def _create_traces_and_annotations(
         self,
         G: nx.DiGraph,
@@ -84,17 +86,16 @@ class GraphVisualizer:
         node_colors: dict | None = None,
         decomposition: DecompositionResult | None = None,
         highlight_subprocess: str | None = None,
-        show_labels: bool = True
-    )  -> tuple[list[go.Scatter], list[dict]]:
-        
+        show_labels: bool = True,
+    ) -> tuple[list[go.Scatter], list[dict]]:
         node_colors = node_colors or {}
-        
+
         node_sizes = {}
         for node in G.nodes():
-             if "size" in G.nodes[node]:
+            if "size" in G.nodes[node]:
                 s = G.nodes[node]["size"]
                 node_sizes[node] = max(20, min(80, 20 + s * 2))
-             else:
+            else:
                 degree = G.in_degree(node) + G.out_degree(node)
                 node_sizes[node] = max(20, min(50, 15 + degree * 3))
 
@@ -135,14 +136,14 @@ class GraphVisualizer:
             dx = x1 - x0
             dy = y1 - y0
             dist = math.sqrt(dx**2 + dy**2)
-            
+
             if dist > 0:
                 scale = 1 - (target_radius / dist)
                 if scale < 0.1:
-                     curr_x1, curr_y1 = x1, y1
+                    curr_x1, curr_y1 = x1, y1
                 else:
-                     curr_x1 = x0 + dx * scale
-                     curr_y1 = y0 + dy * scale
+                    curr_x1 = x0 + dx * scale
+                    curr_y1 = y0 + dy * scale
 
                 annotations.append(
                     dict(
@@ -159,7 +160,7 @@ class GraphVisualizer:
                         arrowsize=2,
                         arrowwidth=2,
                         arrowcolor=edge_color,
-                        opacity=1 if edge_color.startswith("#") else 0.8
+                        opacity=1 if edge_color.startswith("#") else 0.8,
                     )
                 )
 
@@ -178,7 +179,7 @@ class GraphVisualizer:
             if "label" in G.nodes[node]:
                 # Abstract graph
                 hover_text = f"<b>{G.nodes[node]['label']}</b><br>ID: {node}<br>Size: {G.nodes[node]['size']}"
-                label = G.nodes[node]['label']
+                label = G.nodes[node]["label"]
             else:
                 # Normal graph
                 hover_text = f"<b>{node}</b>"
@@ -190,7 +191,7 @@ class GraphVisualizer:
             node_text.append(hover_text)
 
             color = node_colors.get(node, "#888888") if node_colors else "#888888"
-            
+
             node_color_list.append(color)
             node_size_list.append(node_sizes[node])
 
@@ -200,7 +201,9 @@ class GraphVisualizer:
             mode="markers+text" if show_labels else "markers",
             hoverinfo="text",
             hovertext=node_text,
-            text=[G.nodes[n].get("label", n) for n in G.nodes()] if show_labels else None,
+            text=[G.nodes[n].get("label", n) for n in G.nodes()]
+            if show_labels
+            else None,
             textposition="top center",
             textfont=dict(size=10),
             marker=dict(
@@ -210,7 +213,7 @@ class GraphVisualizer:
             ),
             showlegend=False,
         )
-        
+
         return edge_traces + [node_trace], annotations
 
     def visualize_graph(
@@ -222,7 +225,7 @@ class GraphVisualizer:
         highlight_subprocess: str | None = None,
     ) -> go.Figure:
         pos = self.compute_layout(G)
-        
+
         node_colors = {}
         node_subprocess = {}
         if decomposition:
@@ -252,78 +255,103 @@ class GraphVisualizer:
         )
 
         if decomposition:
-             # Add legend traces
-             for i, sp in enumerate(decomposition.subprocesses):
+            # Add legend traces
+            for i, sp in enumerate(decomposition.subprocesses):
                 if sp.parent_id is None:
                     fig.add_trace(
                         go.Scatter(
-                            x=[None], y=[None],
+                            x=[None],
+                            y=[None],
                             mode="markers",
                             marker=dict(size=15, color=get_subprocess_color(i)),
                             name=sp.name,
                             showlegend=True,
                         )
                     )
-        
+
         # Add reset zoom button
         fig.update_layout(
-            updatemenus=[dict(type="buttons", direction="left", x=0.1, y=1.1, buttons=[dict(label="Reset Zoom", method="relayout", args=[{"xaxis.autorange": True, "yaxis.autorange": True}])])]
+            updatemenus=[
+                dict(
+                    type="buttons",
+                    direction="left",
+                    x=0.1,
+                    y=1.1,
+                    buttons=[
+                        dict(
+                            label="Reset Zoom",
+                            method="relayout",
+                            args=[{"xaxis.autorange": True, "yaxis.autorange": True}],
+                        )
+                    ],
+                )
+            ]
         )
 
         return fig
 
-    def visualize_hierarchy(self, graphs: list[nx.DiGraph], titles: list[str], precomputed_layouts: list[dict] | None = None, **kwargs) -> go.Figure:
+    def visualize_hierarchy(
+        self,
+        graphs: list[nx.DiGraph],
+        titles: list[str],
+        precomputed_layouts: list[dict] | None = None,
+        **kwargs,
+    ) -> go.Figure:
         """Visualize a hierarchy of graphs with an interactive slider."""
-        
+
         # Compute layouts and traces for all steps
         all_traces = []
         all_annotations = []
-        
+
         steps = []
-        
+
         # Keep track of trace indices per step
         step_trace_indices = []
         current_trace_idx = 0
-        
+
         for i, G in enumerate(graphs):
             if precomputed_layouts and i < len(precomputed_layouts):
                 pos = precomputed_layouts[i]
             else:
                 pos = self.compute_layout(G)
-            
+
             # Use rainbow colors for abstract nodes
             node_colors = {}
-            if i > 0: # Abstract levels
+            if i > 0:  # Abstract levels
                 for j, node in enumerate(G.nodes()):
                     node_colors[node] = get_subprocess_color(j)
-                    
+
             traces, annotations = self._create_traces_and_annotations(
                 G, pos, node_colors=node_colors, show_labels=True
             )
-            
+
             # Visibility: Only first graph visible initially
-            visible = (i == 0)
-            
+            visible = i == 0
+
             # Calculate range of indices for this step
             num_traces = len(traces)
-            step_indices = list(range(current_trace_idx, current_trace_idx + num_traces))
+            step_indices = list(
+                range(current_trace_idx, current_trace_idx + num_traces)
+            )
             step_trace_indices.append(step_indices)
             current_trace_idx += num_traces
-            
+
             # Set init visibility
             for trace in traces:
                 trace.visible = visible
                 all_traces.append(trace)
-                
+
             all_annotations.append(annotations)
-            
+
             step = dict(
                 method="update",
                 args=[
-                    {"visible": [False] * len(graphs) * 1000}, # Placeholder, fixed below
-                    {"title": titles[i], "annotations": annotations}
+                    {
+                        "visible": [False] * len(graphs) * 1000
+                    },  # Placeholder, fixed below
+                    {"title": titles[i], "annotations": annotations},
                 ],
-                label=f"Level {i}"
+                label=f"Level {i}",
             )
             steps.append(step)
 
@@ -336,7 +364,7 @@ class GraphVisualizer:
             step["args"][0]["visible"] = visible_array
 
         fig = go.Figure(data=all_traces)
-        
+
         # Initial layout (Level 0)
         fig.update_layout(
             title=dict(text=titles[0], x=0.5),
@@ -349,16 +377,18 @@ class GraphVisualizer:
             dragmode="zoom",
             margin=dict(l=20, r=20, t=60, b=20),
             annotations=all_annotations[0],
-            sliders=[dict(
-                active=0,
-                currentvalue={"prefix": "Granularity: "},
-                pad={"t": 50},
-                steps=steps
-            )]
+            sliders=[
+                dict(
+                    active=0,
+                    currentvalue={"prefix": "Granularity: "},
+                    pad={"t": 50},
+                    steps=steps,
+                )
+            ],
         )
-        
+
         return fig
-    
+
     def visualize_subprocess(
         self,
         subprocess: Subprocess,
@@ -376,4 +406,3 @@ class GraphVisualizer:
         return self.visualize_graph(
             G, title=title or f"Subprocess: {subprocess.name}", show_labels=True
         )
-

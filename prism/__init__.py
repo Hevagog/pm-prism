@@ -1,12 +1,10 @@
-_hard_dependencies = ["networkx","pandas","pm4py","plotly"]
+_hard_dependencies = ["networkx", "pandas", "pm4py", "plotly"]
 
 for _dependency in _hard_dependencies:
     try:
         __import__(_dependency)
     except ImportError as _e:
-        raise ImportError(
-        "Unable to import required dependency {dependency}"
-    ) from _e
+        raise ImportError("Unable to import required dependency {dependency}") from _e
 
 del _hard_dependencies, _dependency
 
@@ -26,5 +24,5 @@ __all__ = [
     "ProcessModelAdapter",
     "DecompositionStrategy",
     "SubprocessLabeler",
-    "download_sample_logs"
+    "download_sample_logs",
 ]

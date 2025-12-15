@@ -13,6 +13,7 @@ from prism.core.decomposition import CommunityDetectionStrategy
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
 
+
 class Strategies(Enum):
     COMMUNITY = CommunityDetectionStrategy
 
@@ -105,8 +106,10 @@ class ProcessDecomposer:
 
         # Get hierarchy from strategy
         # Expects list[list[Subprocess]]
-        levels_subprocesses = self._strategy.decompose_hierarchical(self._graph, **kwargs)
-        
+        levels_subprocesses = self._strategy.decompose_hierarchical(
+            self._graph, **kwargs
+        )
+
         results: list[DecompositionResult] = []
         for stage_subprocesses in levels_subprocesses:
             # Build hierarchy map for this level
@@ -116,7 +119,7 @@ class ProcessDecomposer:
                     if sp.parent_id not in hierarchy:
                         hierarchy[sp.parent_id] = []
                     hierarchy[sp.parent_id].append(sp.id)
-            
+
             result = DecompositionResult(
                 original_graph=self._graph,
                 subprocesses=stage_subprocesses,
@@ -125,27 +128,27 @@ class ProcessDecomposer:
                     "strategy": self._strategy.get_strategy_name(),
                     "level_index": len(results),
                     "subprocess_count": len(stage_subprocesses),
-                }
+                },
             )
             results.append(result)
-            
+
         return results
 
     def generate_abstract_graph(self, result: DecompositionResult) -> nx.DiGraph:
         """Generate an abstract graph where nodes represent subprocesses."""
         G_abstract = nx.DiGraph()
-        
+
         # Map original node -> Subprocess ID
         node_to_sp: dict[str, str] = {}
         for sp in result.subprocesses:
             for node in sp.nodes:
                 node_to_sp[node] = sp.id
-            
+
             # Add node to abstract graph with metadata
             G_abstract.add_node(
-                sp.id, 
-                label=sp.name, 
-                size=len(sp.nodes), # Simple metric for size
+                sp.id,
+                label=sp.name,
+                size=len(sp.nodes),  # Simple metric for size
             )
 
         # Add edges
@@ -154,13 +157,13 @@ class ProcessDecomposer:
             if u in node_to_sp and v in node_to_sp:
                 sp_u = node_to_sp[u]
                 sp_v = node_to_sp[v]
-                
+
                 if sp_u != sp_v:
                     if G_abstract.has_edge(sp_u, sp_v):
-                        G_abstract[sp_u][sp_v]['weight'] += 1
+                        G_abstract[sp_u][sp_v]["weight"] += 1
                     else:
                         G_abstract.add_edge(sp_u, sp_v, weight=1)
-                        
+
         return G_abstract
 
     def _decompose(self, **kwargs) -> DecompositionResult:
@@ -217,31 +220,33 @@ class ProcessDecomposer:
             case _:
                 raise ValueError(f"Unknown visualization method: {method}")
 
-    def visualize_hierarchical(self, results: list[DecompositionResult], method: str = "plotly", **kwargs) -> Any:
+    def visualize_hierarchical(
+        self, results: list[DecompositionResult], method: str = "plotly", **kwargs
+    ) -> Any:
         """Visualize a hierarchy of process decompositions."""
         if method != "plotly":
-             raise ValueError("Hierarchical visualization only supported for Plotly.")
-        
+            raise ValueError("Hierarchical visualization only supported for Plotly.")
+
         viz = GraphVisualizer(**kwargs.get("visualizer_kwargs", {}))
-        
+
         # 1. Compute Base Layout (Original Graph)
         # Uses the visualizer's algorithm (tuned spring)
         base_pos = viz.compute_layout(self._graph)
-             
+
         graphs = []
         titles = []
         layouts = []  # Store stable layouts
-        
+
         # Level 0 (Singletons) is naturally the first result from decomposition.
-        
+
         # Add Abstract Graphs
         for i, res in enumerate(results):
             abstract_g = self.generate_abstract_graph(res)
             # Count subprocesses
             count = len(res.subprocesses)
             graphs.append(abstract_g)
-            titles.append(f"Level {i+1}: {count} Communities")
-            
+            titles.append(f"Level {i + 1}: {count} Communities")
+
             # Compute stable layout for this level based on base_pos
             level_pos = {}
             for sp_id in abstract_g.nodes():
@@ -257,16 +262,18 @@ class ProcessDecomposer:
                             sum_x += x
                             sum_y += y
                             n_count += 1
-                    
+
                     if n_count > 0:
                         level_pos[sp_id] = (sum_x / n_count, sum_y / n_count)
                     else:
                         # Fallback if no nodes found (shouldn't happen)
                         level_pos[sp_id] = (0.0, 0.0)
-            
+
             layouts.append(level_pos)
-            
-        return viz.visualize_hierarchy(graphs, titles, precomputed_layouts=layouts, **kwargs)
+
+        return viz.visualize_hierarchy(
+            graphs, titles, precomputed_layouts=layouts, **kwargs
+        )
 
     def get_subprocess(self, subprocess_id: str) -> Subprocess | None:
         """Get a subprocess by ID."""

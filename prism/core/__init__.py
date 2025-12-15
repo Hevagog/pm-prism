@@ -5,9 +5,7 @@ from prism.core.base import (
     DecompositionStrategy,
     SubprocessLabeler,
 )
-from prism.core.decomposer import (
-    ProcessDecomposer
-)
+from prism.core.decomposer import ProcessDecomposer
 
 __all__ = [
     "Subprocess",
@@ -15,5 +13,5 @@ __all__ = [
     "ProcessModelAdapter",
     "DecompositionStrategy",
     "SubprocessLabeler",
-    "ProcessDecomposer"
+    "ProcessDecomposer",
 ]

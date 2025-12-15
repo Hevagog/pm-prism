@@ -75,7 +75,9 @@ class DecompositionStrategy(ABC):
         """Return the name of this decomposition strategy."""
         pass
 
-    def decompose_hierarchical(self, graph: nx.DiGraph, **kwargs) -> list[list[Subprocess]]:
+    def decompose_hierarchical(
+        self, graph: nx.DiGraph, **kwargs
+    ) -> list[list[Subprocess]]:
         """
         Decompose a graph into a hierarchy of subprocess levels.
 
@@ -89,7 +91,7 @@ class SubprocessLabeler(ABC):
     """Interface for generating semantic labels for subprocesses."""
 
     @abstractmethod
-    def label(self, subprocess: Subprocess, context: dict | None  = None) -> str:
+    def label(self, subprocess: Subprocess, context: dict | None = None) -> str:
         """
         Generate a label/name for a subprocess.
 

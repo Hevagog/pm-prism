@@ -36,7 +36,9 @@ def demo_basic_decomposition():
 def demo_interactive_visualization(decomposer):
     # Perform hierarchical decomposition
     results = decomposer.decompose_hierarchical()
-    fig = decomposer.visualize_hierarchical(results, method="plotly", title="Process Granularity Explorer")
+    fig = decomposer.visualize_hierarchical(
+        results, method="plotly", title="Process Granularity Explorer"
+    )
     fig.show()
 
 
@@ -44,6 +46,7 @@ def main():
     # download_sample_logs(SAMPLE_URL)
     decomposer = demo_basic_decomposition()
     demo_interactive_visualization(decomposer)
+
 
 if __name__ == "__main__":
     main()

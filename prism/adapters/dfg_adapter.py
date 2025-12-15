@@ -134,4 +134,3 @@ class DFGAdapter(ProcessModelAdapter):
         if self._dfg_data is None:
             raise ValueError("No DFG loaded. Call load() first.")
         pm4py.view_dfg(self._dfg_data, self._start_activities, self._end_activities)
-

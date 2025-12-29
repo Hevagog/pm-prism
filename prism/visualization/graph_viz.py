@@ -408,3 +408,96 @@ class GraphVisualizer:
         return self.visualize_graph(
             G, title=title or f"Subprocess: {subprocess.name}", show_labels=True
         )
+
+    def visualize_hierarchy_with_drilldown(
+        self,
+        graphs: list[nx.DiGraph],
+        titles: list[str],
+        subprocesses_per_level: list[list[Subprocess]],
+        original_graph: nx.DiGraph,
+        precomputed_layouts: list[dict] | None = None,
+        **kwargs,
+    ) -> go.Figure:
+        """
+        Visualize hierarchy with ability to drill down into clusters.
+        
+        Click on a cluster node to see its internal structure in a separate view.
+        """
+        # Build the main hierarchy figure
+        fig = self.visualize_hierarchy(graphs, titles, precomputed_layouts, **kwargs)
+        
+        # Add custom data for drill-down (subprocess info per node)
+        # This enables click events to identify which subprocess was clicked
+        
+        # Update hover template to show drill-down hint for cluster nodes
+        fig.update_traces(
+            hovertemplate="<b>%{hovertext}</b><br><i>Click to drill down</i><extra></extra>",
+            selector=dict(mode="markers+text"),
+        )
+        
+        return fig
+
+    def create_drilldown_view(
+        self,
+        subprocess: Subprocess,
+        original_graph: nx.DiGraph,
+    ) -> go.Figure:
+        """
+        Create a detailed view of a subprocess's internal structure.
+        
+        Args:
+            subprocess: The subprocess to visualize.
+            original_graph: The original graph (to get edge weights etc.)
+            
+        Returns:
+            A Plotly figure showing the subprocess internals.
+        """
+        # Extract subgraph
+        subgraph = original_graph.subgraph(subprocess.nodes).copy()
+        
+        # Compute layout for the subgraph
+        pos = self.compute_layout(subgraph)
+        
+        # Create traces
+        traces, annotations = self._create_traces_and_annotations(
+            subgraph, pos, show_labels=True
+        )
+        
+        fig = go.Figure(data=traces)
+        
+        fig.update_layout(
+            title=dict(
+                text=f"Inside: {subprocess.name} ({len(subprocess.nodes)} nodes)",
+                x=0.5,
+            ),
+            showlegend=False,
+            hovermode="closest",
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            plot_bgcolor="#f8f9fa",
+            paper_bgcolor="white",
+            dragmode="zoom",
+            margin=dict(l=20, r=20, t=60, b=20),
+            annotations=annotations,
+        )
+        
+        # Add a "back" button placeholder (actual navigation handled by app)
+        fig.update_layout(
+            updatemenus=[
+                dict(
+                    type="buttons",
+                    direction="left",
+                    x=0.1,
+                    y=1.1,
+                    buttons=[
+                        dict(
+                            label="← Back to Overview",
+                            method="relayout",
+                            args=[{}],  # Placeholder - actual action in Dash app
+                        )
+                    ],
+                )
+            ]
+        )
+        
+        return fig

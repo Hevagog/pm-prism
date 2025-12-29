@@ -8,14 +8,17 @@ from prism.core.base import (
     DecompositionStrategy,
     DecompositionResult,
     Subprocess,
+    SubprocessLabeler,
 )
 from prism.core.decomposition import CommunityDetectionStrategy
+from prism.core.embedding_strategy import EmbeddingClusteringStrategy
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
 
 
 class Strategies(Enum):
     COMMUNITY = CommunityDetectionStrategy
+    EMBEDDING = EmbeddingClusteringStrategy
 
 
 class ProcessDecomposer:
@@ -23,14 +26,34 @@ class ProcessDecomposer:
 
     def __init__(
         self,
-        strategy: str = "community",
+        strategy: str | DecompositionStrategy = "community",
         strategy_kwargs: dict | None = None,
+        labeler: SubprocessLabeler | None = None,
     ):
-        """Initialize the decomposer with a specific strategy."""
+        """
+        Initialize the decomposer with a specific strategy.
+
+        Args:
+            strategy: Either a strategy name ("community", "embedding") or a strategy instance.
+            strategy_kwargs: Arguments passed to strategy constructor (only used if strategy is a string).
+            labeler: Optional labeler for generating cluster names. Passed to strategy if strategy is a string.
+        """
         self.strategies = Strategies
-        self._strategy_name = strategy
-        self._strategy_kwargs = strategy_kwargs or {}
-        self._strategy: DecompositionStrategy = self._create_strategy(strategy)
+        self._labeler = labeler
+
+        if isinstance(strategy, DecompositionStrategy):
+            # Use provided strategy instance directly
+            self._strategy = strategy
+            self._strategy_name = strategy.get_strategy_name()
+            self._strategy_kwargs = {}
+        else:
+            # Create strategy from name
+            self._strategy_name = strategy
+            self._strategy_kwargs = strategy_kwargs or {}
+            # Add labeler to kwargs if provided
+            if labeler is not None:
+                self._strategy_kwargs["labeler"] = labeler
+            self._strategy = self._create_strategy(strategy)
 
         self._adapter: ProcessModelAdapter | None = None
         self._graph: nx.DiGraph | None = None

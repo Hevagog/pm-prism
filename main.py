@@ -17,8 +17,12 @@ def demo_basic_decomposition():
         return
 
     decomposer = ProcessDecomposer(
-        strategy="community",
-        strategy_kwargs={"resolution": 1.0, "min_community_size": 2},
+        strategy="embedding", # "community",
+        strategy_kwargs={
+            "optimal_size": (3, 5),
+            "similarity_threshold": 0.3,
+        }
+        # strategy_kwargs={"resolution": 1.0, "min_community_size": 2},
     )
 
     result = decomposer.decompose_from_csv(

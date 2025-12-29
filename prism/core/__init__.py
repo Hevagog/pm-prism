@@ -6,6 +6,12 @@ from prism.core.base import (
     SubprocessLabeler,
 )
 from prism.core.decomposer import ProcessDecomposer
+from prism.core.embedding_strategy import (
+    EmbeddingClusteringStrategy,
+    EmbeddingProvider,
+    cluster_size_quality,
+)
+from prism.core.labeler import LLMLabeler, SimpleLabeler
 
 __all__ = [
     "Subprocess",
@@ -14,4 +20,9 @@ __all__ = [
     "DecompositionStrategy",
     "SubprocessLabeler",
     "ProcessDecomposer",
+    "EmbeddingClusteringStrategy",
+    "EmbeddingProvider",
+    "cluster_size_quality",
+    "LLMLabeler",
+    "SimpleLabeler",
 ]

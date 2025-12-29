@@ -4,19 +4,29 @@ import uuid
 import heapq
 import itertools
 
-from prism.core import DecompositionStrategy, Subprocess
+from prism.core import DecompositionStrategy, Subprocess, SubprocessLabeler
 
 
 class CommunityDetectionStrategy(DecompositionStrategy):
     """Decomposition strategy using the Louvain community detection algorithm."""
 
-    def __init__(self, resolution: float = 1.0, min_community_size: int = 2):
+    def __init__(
+        self,
+        resolution: float = 1.0,
+        min_community_size: int = 2,
+        labeler: SubprocessLabeler | None = None,
+    ):
         """Initialize with resolution parameter and minimum community size."""
         self.resolution = resolution
         self.min_community_size = min_community_size
+        self.labeler = labeler
 
     def _create_subprocesses_for_partition(
-        self, graph: nx.DiGraph, partition: list[set[str]], min_size: int | None = None
+        self,
+        graph: nx.DiGraph,
+        partition: list[set[str]],
+        min_size: int | None = None,
+        labeling_context: dict | None = None,
     ) -> list[Subprocess]:
         """Create subprocess objects from a node partition."""
         subprocesses = []
@@ -29,8 +39,8 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                     if u in comm and v in comm:
                         edges.add((u, v))
 
-                # Check for label propagation
-                name = f"Subprocess_{i + 1}"  # TODO: use LLM to generate a fitting and unique node name
+                # Name: singleton uses node name, multi-node uses placeholder
+                name = f"Subprocess_{i + 1}"
                 if len(comm) == 1:
                     name = str(list(comm)[0])
 
@@ -42,6 +52,13 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                     metadata={"detection_method": "louvain", "community_index": i},
                 )
                 subprocesses.append(subprocess)
+
+        # Apply labeler for multi-node subprocesses
+        if self.labeler:
+            for sp in subprocesses:
+                if len(sp.nodes) > 1:
+                    sp.name = self.labeler.label(sp, labeling_context)
+
         return subprocesses
 
     def decompose(self, graph: nx.DiGraph, **kwargs) -> list[Subprocess]:

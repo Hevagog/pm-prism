@@ -11,4 +11,8 @@ dependencies = [
     "plotly>=5.0",
     "dash>=2.0",
     "pandas-stubs>=2.3.3.251201",
+    "sentence-transformers>=2.2",
+    "numpy>=1.24",
+    "groq>=0.4",
+    "python-dotenv>=1.0",
 ]

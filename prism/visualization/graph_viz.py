@@ -213,7 +213,7 @@ class GraphVisualizer:
             ),
             showlegend=False,
         )
-        
+
         return edge_traces + [node_trace], annotations
 
         return edge_traces + [node_trace], annotations
@@ -262,7 +262,8 @@ class GraphVisualizer:
                 if sp.parent_id is None:
                     fig.add_trace(
                         go.Scatter(
-                            x=[None], y=[None],
+                            x=[None],
+                            y=[None],
                             mode="markers",
                             marker=dict(size=15, color=get_subprocess_color(i)),
                             name=sp.name,

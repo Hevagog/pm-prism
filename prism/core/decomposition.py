@@ -60,7 +60,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         except Exception:
             # Fallback to greedy modularity if Louvain fails
             communities = list(community.greedy_modularity_communities(undirected))
-            
+
         return self._create_subprocesses_for_partition(graph, communities)
 
         return self._create_subprocesses_for_partition(graph, communities)

@@ -10,7 +10,7 @@ logger = logging.Logger(__name__)
 
 def demo_basic_decomposition():
     sample_dir = download_sample_logs(SAMPLE_URL)
-    csv_path = sample_dir / "repairExample.csv"
+    csv_path = sample_dir / "purchasingExample.csv"
 
     if not csv_path.exists():
         logger.error(f"Sample file not found: {csv_path}")

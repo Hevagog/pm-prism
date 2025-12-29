@@ -1,6 +1,7 @@
+"""Process decomposer orchestrating loading, decomposition, and visualization."""
+
 from typing import Any
 import pandas as pd
-from enum import Enum
 import networkx as nx
 
 from prism.core.base import (
@@ -8,67 +9,44 @@ from prism.core.base import (
     DecompositionStrategy,
     DecompositionResult,
     Subprocess,
-    SubprocessLabeler,
 )
-from prism.core.decomposition import CommunityDetectionStrategy
-from prism.core.embedding_strategy import EmbeddingClusteringStrategy
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
 
 
-class Strategies(Enum):
-    COMMUNITY = CommunityDetectionStrategy
-    EMBEDDING = EmbeddingClusteringStrategy
-
-
 class ProcessDecomposer:
-    """Orchestrates the loading and decomposition of process models."""
+    """
+    Orchestrates the loading and decomposition of process models.
 
-    def __init__(
-        self,
-        strategy: str | DecompositionStrategy = "community",
-        strategy_kwargs: dict | None = None,
-        labeler: SubprocessLabeler | None = None,
-    ):
+    Usage:
+        from prism.core import EmbeddingClusteringStrategy, LLMLabeler
+
+        # Create strategy with desired configuration
+        labeler = LLMLabeler()
+        strategy = EmbeddingClusteringStrategy(labeler=labeler, optimal_size=(5, 8))
+
+        # Initialize decomposer with strategy
+        decomposer = ProcessDecomposer(strategy)
+        result = decomposer.decompose_from_csv("log.csv")
+    """
+
+    def __init__(self, strategy: DecompositionStrategy):
         """
-        Initialize the decomposer with a specific strategy.
+        Initialize the decomposer with a decomposition strategy.
 
         Args:
-            strategy: Either a strategy name ("community", "embedding") or a strategy instance.
-            strategy_kwargs: Arguments passed to strategy constructor (only used if strategy is a string).
-            labeler: Optional labeler for generating cluster names. Passed to strategy if strategy is a string.
+            strategy: A configured DecompositionStrategy instance.
         """
-        self.strategies = Strategies
-        self._labeler = labeler
+        if not isinstance(strategy, DecompositionStrategy):
+            raise TypeError(
+                f"strategy must be a DecompositionStrategy instance, got {type(strategy).__name__}. "
+                "Use EmbeddingClusteringStrategy() or CommunityDetectionStrategy()."
+            )
 
-        if isinstance(strategy, DecompositionStrategy):
-            # Use provided strategy instance directly
-            self._strategy = strategy
-            self._strategy_name = strategy.get_strategy_name()
-            self._strategy_kwargs = {}
-        else:
-            # Create strategy from name
-            self._strategy_name = strategy
-            self._strategy_kwargs = strategy_kwargs or {}
-            # Add labeler to kwargs if provided
-            if labeler is not None:
-                self._strategy_kwargs["labeler"] = labeler
-            self._strategy = self._create_strategy(strategy)
-
+        self._strategy = strategy
         self._adapter: ProcessModelAdapter | None = None
         self._graph: nx.DiGraph | None = None
         self._result: DecompositionResult | None = None
-
-    def _create_strategy(self, strategy: str) -> DecompositionStrategy:
-        """Create a decomposition strategy instance."""
-        strat_viable_names = [strat.name.lower() for strat in self.strategies]
-        if strategy not in strat_viable_names:
-            raise ValueError(
-                f"Unknown strategy: {strategy}. Available: {strat_viable_names}"
-            )
-
-        strategy_class = self.strategies[strategy.upper()].value
-        return strategy_class(**self._strategy_kwargs)
 
     def decompose_from_csv(
         self,
@@ -197,11 +175,6 @@ class ProcessDecomposer:
         # Apply decomposition strategy
         subprocesses = self._strategy.decompose(self._graph, **kwargs)
 
-        # Label subprocesses
-        # context = kwargs.get("labeling_context", None)
-        # for sp in subprocesses:
-        #     sp.name = self._labeler.label(sp, context)
-
         # Build hierarchy
         hierarchy: dict[str, list[str]] = {}
         for sp in subprocesses:
@@ -229,7 +202,7 @@ class ProcessDecomposer:
 
     def visualize(self, method: str = "plotly", **kwargs) -> Any:
         """Visualize the decomposition result."""
-        if self._result is None:
+        if self._result is None or self._graph is None:
             raise ValueError("No decomposition result. Call decompose_* first.")
         match method:
             case "plotly":
@@ -237,7 +210,7 @@ class ProcessDecomposer:
                 return viz.visualize_graph(self._graph, self._result, **kwargs)
             case "pm4py":
                 if self._adapter and hasattr(self._adapter, "view_dfg"):
-                    self._adapter.view_dfg()
+                    self._adapter.view_dfg()  # type: ignore[attr-defined]
                 else:
                     raise ValueError("PM4Py visualization requires DFG adapter")
             case _:
@@ -249,34 +222,47 @@ class ProcessDecomposer:
         """Visualize a hierarchy of process decompositions."""
         if method != "plotly":
             raise ValueError("Hierarchical visualization only supported for Plotly.")
+        if self._graph is None:
+            raise ValueError("No graph loaded. Call decompose_* first.")
 
         viz = GraphVisualizer(**kwargs.get("visualizer_kwargs", {}))
 
         # 1. Compute Base Layout (Original Graph)
-        # Uses the visualizer's algorithm (tuned spring)
         base_pos = viz.compute_layout(self._graph)
 
         graphs = []
         titles = []
-        layouts = []  # Store stable layouts
+        layouts = []
 
-        # Level 0 (Singletons) is naturally the first result from decomposition.
+        # 2. Build consistent color mapping based on original nodes
+        # Each original node gets a color based on which final cluster it belongs to
+        # Then subprocesses inherit colors from the nodes they contain
+        from prism.visualization.graph_viz import get_subprocess_color
+        
+        # Get the final level (most abstracted) to determine cluster colors
+        final_result = results[-1] if results else None
+        node_to_color: dict[str, str] = {}
+        subprocess_colors: dict[str, str] = {}
+        
+        if final_result:
+            for i, sp in enumerate(final_result.subprocesses):
+                color = get_subprocess_color(i)
+                subprocess_colors[sp.id] = color
+                for node in sp.nodes:
+                    node_to_color[node] = color
 
-        # Add Abstract Graphs
-        for i, res in enumerate(results):
+        # 3. Build graphs for each level with consistent colors
+        for level_idx, res in enumerate(results):
             abstract_g = self.generate_abstract_graph(res)
-            # Count subprocesses
             count = len(res.subprocesses)
             graphs.append(abstract_g)
-            titles.append(f"Level {i + 1}: {count} Communities")
+            titles.append(f"Level {level_idx + 1}: {count} Communities")
 
-            # Compute stable layout for this level based on base_pos
+            # Compute stable layout based on centroids
             level_pos = {}
             for sp_id in abstract_g.nodes():
                 sp = res.get_subprocess_by_id(sp_id)
                 if sp:
-                    # Centroid calculation
-                    # Average x, y of all constituent nodes in original graph
                     sum_x, sum_y = 0.0, 0.0
                     n_count = 0
                     for node in sp.nodes:
@@ -289,13 +275,26 @@ class ProcessDecomposer:
                     if n_count > 0:
                         level_pos[sp_id] = (sum_x / n_count, sum_y / n_count)
                     else:
-                        # Fallback if no nodes found (shouldn't happen)
                         level_pos[sp_id] = (0.0, 0.0)
+                    
+                    # Assign color based on the dominant final cluster
+                    # (the color of the majority of nodes in this subprocess)
+                    if node_to_color:
+                        color_counts: dict[str, int] = {}
+                        for node in sp.nodes:
+                            c = node_to_color.get(node, "#888888")
+                            color_counts[c] = color_counts.get(c, 0) + 1
+                        # Pick the most common color
+                        dominant_color = max(color_counts, key=lambda c: color_counts[c])
+                        subprocess_colors[sp_id] = dominant_color
 
             layouts.append(level_pos)
 
         return viz.visualize_hierarchy(
-            graphs, titles, precomputed_layouts=layouts, **kwargs
+            graphs, titles, 
+            precomputed_layouts=layouts, 
+            subprocess_colors=subprocess_colors,
+            **kwargs
         )
 
     def get_subprocess(self, subprocess_id: str) -> Subprocess | None:
@@ -310,6 +309,39 @@ class ProcessDecomposer:
             return []
         return self._result.subprocesses
 
+    def visualize_subprocess(self, subprocess_id: str, color: str | None = None, **kwargs) -> Any:
+        """
+        Visualize the internal structure of a subprocess (drill-down view).
+        
+        Args:
+            subprocess_id: ID of the subprocess to visualize.
+            color: Optional color for the nodes. If None, uses index-based color.
+            **kwargs: Additional arguments passed to visualizer.
+            
+        Returns:
+            Plotly figure showing the subprocess internals.
+        """
+        if self._graph is None:
+            raise ValueError("No graph loaded.")
+        if self._result is None:
+            raise ValueError("No decomposition result.")
+        
+        sp = self.get_subprocess(subprocess_id)
+        if sp is None:
+            raise ValueError(f"Subprocess '{subprocess_id}' not found.")
+        
+        # Determine color from subprocess index if not provided
+        if color is None:
+            from prism.visualization.graph_viz import get_subprocess_color
+            sp_index = next(
+                (i for i, s in enumerate(self._result.subprocesses) if s.id == subprocess_id),
+                0
+            )
+            color = get_subprocess_color(sp_index)
+        
+        viz = GraphVisualizer(**kwargs.get("visualizer_kwargs", {}))
+        return viz.create_drilldown_view(sp, self._graph, color=color)
+
     def get_graph(self) -> nx.DiGraph | None:
         return self._graph
 
@@ -317,7 +349,7 @@ class ProcessDecomposer:
         return self._result
 
     def export(self) -> dict[str, Any]:
-        if self._adapter and self._result:
+        if self._adapter and self._result and self._graph:
             return self._adapter.export(self._graph, self._result)
         return {}
 

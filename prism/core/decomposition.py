@@ -78,7 +78,9 @@ class CommunityDetectionStrategy(DecompositionStrategy):
             # Fallback to greedy modularity if Louvain fails
             communities = list(community.greedy_modularity_communities(undirected))
 
-        return self._create_subprocesses_for_partition(graph, communities)
+        # Convert frozensets to sets for type consistency
+        communities_as_sets: list[set[str]] = [set(c) for c in communities]
+        return self._create_subprocesses_for_partition(graph, communities_as_sets)
 
         return self._create_subprocesses_for_partition(graph, communities)
 

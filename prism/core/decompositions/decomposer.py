@@ -1,5 +1,3 @@
-"""Process decomposer orchestrating loading, decomposition, and visualization."""
-
 from typing import Any
 import pandas as pd
 import networkx as nx
@@ -9,6 +7,7 @@ from prism.core.base import (
     DecompositionStrategy,
     DecompositionResult,
     Subprocess,
+    SubprocessLabeler,
 )
 from prism.core.config import DecompositionConfig
 from prism.adapters import DFGAdapter
@@ -31,19 +30,31 @@ class ProcessDecomposer:
         result = decomposer.decompose_from_csv("log.csv")
     """
 
-    def __init__(self, strategy: DecompositionStrategy | DecompositionConfig):
+    def __init__(
+        self,
+        strategy: DecompositionStrategy | DecompositionConfig,
+        labeler: SubprocessLabeler | None = None,
+    ):
         """
         Initialize the decomposer with a decomposition strategy or configuration.
 
         Args:
             strategy: A configured DecompositionStrategy instance or a DecompositionConfig.
+            labeler: Optional labeler to be used when creating strategy from config.
         """
         if isinstance(strategy, DecompositionConfig):
             from prism.core.decompositions.factory import DecompositionStrategyFactory
 
-            self._strategy = DecompositionStrategyFactory.create_strategy(strategy)
+            self._strategy = DecompositionStrategyFactory.create_strategy(
+                strategy, labeler=labeler
+            )
         elif isinstance(strategy, DecompositionStrategy):
             self._strategy = strategy
+        else:
+            raise TypeError(
+                f"strategy must be a DecompositionStrategy instance or DecompositionConfig, got {type(strategy).__name__}. "
+                "Use a specific Strategy class or DecompositionConfig."
+            )
 
         self._adapter: ProcessModelAdapter | None = None
         self._graph: nx.DiGraph | None = None

@@ -1,5 +1,3 @@
-"""Core module for process decomposition."""
-
 from prism.core.base import (
     Subprocess,
     DecompositionResult,
@@ -7,8 +5,16 @@ from prism.core.base import (
     DecompositionStrategy,
     SubprocessLabeler,
 )
-from prism.core.decomposer import ProcessDecomposer
-from prism.core.decomposition import CommunityDetectionStrategy
+from prism.core.config import DecompositionConfig, StrategyType
+from prism.core.decompositions import (
+    CommunityDetectionStrategy,
+    ProcessDecomposer,
+    CutVertexStrategy,
+    GatewayBasedStrategy,
+    HierarchicalDecompositionStrategy,
+    SCCDecompositionStrategy,
+    DecompositionStrategyFactory,
+)
 from prism.core.embedding_strategy import (
     EmbeddingClusteringStrategy,
     EmbeddingProvider,
@@ -28,10 +34,18 @@ __all__ = [
     "ProcessDecomposer",
     # Strategy classes (for full customization)
     "EmbeddingClusteringStrategy",
+    "CutVertexStrategy",
+    "GatewayBasedStrategy",
+    "HierarchicalDecompositionStrategy",
     "CommunityDetectionStrategy",
+    "SCCDecompositionStrategy",
     # Factory functions (convenience)
     "embedding_strategy",
     "community_strategy",
+    "DecompositionStrategyFactory",
+    # configs
+    "DecompositionConfig",
+    "StrategyType",
     # Labelers
     "LLMLabeler",
     "SimpleLabeler",

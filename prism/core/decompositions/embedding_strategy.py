@@ -1,3 +1,5 @@
+"""Embedding-based decomposition strategy using agglomerative clustering."""
+
 import uuid
 import heapq
 from dataclasses import dataclass, field
@@ -189,9 +191,7 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         Decide whether merging improves overall quality.
         Compares average quality before vs quality after merge.
         """
-        quality_before = sum(
-            cluster_size_quality(s, self.optimal_size) for s in size_before
-        )
+        quality_before = sum(cluster_size_quality(s, self.optimal_size) for s in size_before)
         quality_before /= len(size_before)
 
         quality_after = cluster_size_quality(size_after, self.optimal_size)
@@ -415,9 +415,7 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         labeling_context = kwargs.get("labeling_context")
 
         # Level 0: all singletons
-        hierarchy.append(
-            self._clusters_to_subprocesses(graph, initial_clusters, labeling_context)
-        )
+        hierarchy.append(self._clusters_to_subprocesses(graph, initial_clusters, labeling_context))
 
         # For each formed cluster, create a level showing it formed
         # while others remain as singletons
@@ -436,9 +434,7 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
                 if node not in nodes_in_formed:
                     current_state.append(Cluster(nodes={node}, embedding=emb))
 
-            hierarchy.append(
-                self._clusters_to_subprocesses(graph, current_state, labeling_context)
-            )
+            hierarchy.append(self._clusters_to_subprocesses(graph, current_state, labeling_context))
 
         return hierarchy
 

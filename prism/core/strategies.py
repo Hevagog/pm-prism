@@ -5,7 +5,7 @@ This module provides easy-to-use factory functions for common strategy configura
 For full customization, instantiate strategy classes directly.
 """
 
-from prism.core.decomposition import CommunityDetectionStrategy
+from prism.core.decompositions import CommunityDetectionStrategy
 from prism.core.embedding_strategy import EmbeddingClusteringStrategy
 from prism.core.labeler import LLMLabeler, SimpleLabeler
 
@@ -73,9 +73,3 @@ def community_strategy(
         resolution=resolution,
         labeler=labeler,
     )
-
-
-__all__ = [
-    "embedding_strategy",
-    "community_strategy",
-]

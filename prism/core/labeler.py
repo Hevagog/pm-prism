@@ -1,5 +1,3 @@
-"""LLM-based subprocess labeling."""
-
 import os
 from prism.core.base import SubprocessLabeler, Subprocess
 
@@ -84,7 +82,7 @@ Respond with ONLY the name, nothing else."""
                 return f"Group ({len(nodes)} activities)"
             name = content.strip()
             # Clean up: remove quotes if present
-            name = name.strip('"\'')
+            name = name.strip("\"'")
             return name
         except Exception as e:
             # Fallback to simple naming
@@ -158,9 +156,9 @@ Format: "Group N: Name" """
                     line = lines[i]
                     # Extract name after "Group N:"
                     if ":" in line:
-                        name = line.split(":", 1)[1].strip().strip('"\'')
+                        name = line.split(":", 1)[1].strip().strip("\"'")
                     else:
-                        name = line.strip().strip('"\'')
+                        name = line.strip().strip("\"'")
                     labels[sp.id] = name
                 else:
                     labels[sp.id] = f"Group ({len(sp.nodes)} activities)"

@@ -1,127 +1,97 @@
-# PM-PRISM
+#PM-PRISM
 
 **P**rocess **M**ining - **P**rocess **R**epresentation with **I**ntelligent **S**ubprocess **M**odeling
 
-A tool for automatic decomposition of process models (DFG, BPMN) into smaller, manageable subprocesses.
+PM-PRISM decomposes process models (currently DFG-focused) into smaller subprocesses with multiple algorithms, optional semantic labeling, and interactive visualization.
 
-## Project Overview
-
-This project implements an algorithm for automatically decomposing complex process models (Directly-Follows Graphs and BPMN models) into smaller subprocesses by identifying key model components.
-
-### Part I: DFG Decomposition (Deadline: 13.01)
-- Automatic decomposition of DFG models using graph algorithms
-- Multiple decomposition strategies (community detection, SCC, cut vertices, etc.)
-- GPT-based subprocess labeling
-- Interactive visualization with zoom capabilities
-
-### Part II: BPMN Adaptation (Deadline: 27.01)
-- Adaptation of the solution to BPMN models
-- Support for BPMN-specific elements (gateways, events, subprocesses)
-- Integration with bpmn.js for visualization
+## Highlights
+- Multiple decomposition strategies: Louvain community detection, SCC, cut-vertex, gateway-based, hierarchical, and embedding-based clustering.
+- Configuration-first API via `DecompositionConfig` and `StrategyType` with optional labelers.
+- Input flexibility: CSV, XES, pandas DataFrame, or pre-computed DFG.
+- Visualization: Plotly-based graph views and hierarchical exploration; interactive Dash helper in `visualization/interactive.py`.
 
 ## Quick Start
 
-```python
-from src.decomposer import ProcessDecomposer
-
-# Create decomposer
-decomposer = ProcessDecomposer(strategy='community')
-
-# Load and decompose from CSV event log
-result = decomposer.decompose_from_csv(
-    "sample_logs/repairExample.csv",
-    case_id='Case ID',
-    activity_key='Activity',
-    timestamp_key='Start Timestamp'
-)
-
-# Print summary
-print(decomposer.summary())
-
-# Visualize with Plotly (interactive)
-fig = decomposer.visualize(method='plotly')
-fig.show()
-
-# Or launch full Dash web UI
-app = decomposer.visualize(method='dash')
-app.run(debug=True)
-```
-
-## Architecture
-
-```
-pm-prism/
-├── src/
-│   ├── core/
-│   │   ├── base.py           # Abstract base classes
-│   │   └── decomposition.py  # Decomposition strategies
-│   ├── adapters/
-│   │   ├── dfg_adapter.py    # DFG loading (PM4Py)
-│   │   └── bpmn_adapter.py   # BPMN support (Part II)
-│   ├── visualization/
-│   │   └── graph_viz.py      # Plotly/Dash visualization
-│   ├── labeling/
-│   │   └── __init__.py       # GPT/heuristic labeling
-│   └── decomposer.py         # Main orchestrator
-├── main.py                   # Demo entry point
-└── tests/                    # Unit tests
-```
-
-## Decomposition Strategies
-
-| Strategy | Description | Best For |
-|----------|-------------|----------|
-| `community` | Louvain community detection | General decomposition |
-| `scc` | Strongly connected components | Identifying loops/cycles |
-| `cut_vertex` | Articulation point based | Finding critical nodes |
-| `gateway` | High-degree node based | Decision-heavy processes |
-| `hierarchical` | Multi-level decomposition | Large, complex models |
-
-## Features
-
-- **Multiple Input Formats**: CSV, XES, pandas DataFrame, or pre-computed DFG
-- **Flexible Strategies**: Choose from various graph decomposition algorithms
-- **Intelligent Labeling**: GPT-based or heuristic subprocess naming
-- **Interactive UI**: Zoom, pan, and explore subprocesses with Dash
-- **Extensible Design**: Easy to add new strategies and model types
-
-## Environment Variables
-
-For GPT-based labeling:
 ```bash
-export OPENAI_API_KEY="your-api-key"
-```
-
-## Running the Demo
-
-```bash
+pip install -e .
 python main.py
 ```
 
-This will:
-1. Download sample event logs
-2. Decompose the repair process example
-3. Optionally show interactive visualization
-4. Compare different strategies
+Minimal programmatic example:
+
+```python
+from prism.core import ProcessDecomposer, DecompositionConfig, StrategyType
+
+config = DecompositionConfig(
+    strategy_type=StrategyType.LOUVAIN,
+    resolution=1.0,
+    min_size=2,
+)
+
+decomposer = ProcessDecomposer(config)
+
+result = decomposer.decompose_from_csv(
+    "sample_logs/repairExample.csv",
+    case_id="Case ID",
+    activity_key="Activity",
+    timestamp_key="Start Timestamp",
+)
+
+print(decomposer.summary())
+fig = decomposer.visualize(method="plotly")
+fig.show()
+```
+
+## Repository Layout
+
+```
+
+├── main.py                      # Demo entry point
+├── prism/
+│   ├── core/
+│   │   ├── base.py             # Core dataclasses and abstract interfaces
+│   │   ├── config.py           # DecompositionConfig and StrategyType
+│   │   ├── decompositions/     # Strategy implementations
+│   │   ├── decomposer.py       # ProcessDecomposer orchestrator
+│   │   └── embedding_strategy.py
+│   ├── adapters/dfg_adapter.py # DFG loading via pm4py
+│   ├── visualization/          # Plotly/interactive helpers
+│   └── utils/                  # Download helpers
+├── sample_logs/                # Sample CSV event logs
+└── tests/                      # Unit tests
+```
+
+## Configurable Strategies
+
+Use `StrategyType` with `DecompositionConfig`:
+
+- `StrategyType.LOUVAIN` – community detection
+- `StrategyType.SCC` – strongly connected components
+- `StrategyType.CUT_VERTEX` – articulation-point blocks
+- `StrategyType.GATEWAY` – high-degree gateway-like splits
+- `StrategyType.HIERARCHICAL` – primary/secondary strategy chaining
+- `StrategyType.EMBEDDING` – semantic clustering with sentence-transformers
+
+Create strategies manually with `DecompositionStrategyFactory` if needed.
+
+## Features
+- Decompose DFGs from CSV, XES, DataFrame, or dict DFG.
+- Optional subprocess labeling via `SubprocessLabeler` (LLM or simple labeler).
+- Hierarchical decomposition support and abstract graph generation.
+- Plotly-based visualization for flat and hierarchical decompositions.
+
+## Environment
+
+Optional for LLM labeling:
+```bash
+export GROQ_API_KEY="your-key"
+```
 
 ## Development
 
 ```bash
-# Run tests
-pytest
-
-# Lint code
-ruff check src/
-
-# Format code
-ruff format src/
+python -m pytest
 ```
 
-## Dependencies
-
-- **networkx**: Graph analysis and decomposition algorithms
-- **pandas**: Event log handling
-- **pm4py**: Process mining (DFG/BPMN discovery)
-- **plotly**: Interactive visualization
-- **dash**: Web UI framework
-- **openai** (optional): GPT-based labeling
+Key dependencies: networkx, pandas, pm4py, plotly, dash, sentence-transformers (for embedding strategy).
+python main.py

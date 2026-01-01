@@ -1,4 +1,4 @@
-#PM-PRISM
+# PM-PRISM
 
 **P**rocess **M**ining - **P**rocess **R**epresentation with **I**ntelligent **S**ubprocess **M**odeling
 

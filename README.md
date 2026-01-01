@@ -87,11 +87,4 @@ Optional for LLM labeling:
 export GROQ_API_KEY="your-key"
 ```
 
-## Development
-
-```bash
-python -m pytest
-```
-
 Key dependencies: networkx, pandas, pm4py, plotly, dash, sentence-transformers (for embedding strategy).
-python main.py

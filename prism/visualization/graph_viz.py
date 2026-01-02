@@ -59,26 +59,6 @@ class GraphVisualizer:
         except Exception:
             return nx.spring_layout(G)
 
-    def visualize_graph(
-        self,
-        G: nx.DiGraph,
-        decomposition: DecompositionResult | None = None,
-        title: str = "Process Graph",
-        show_labels: bool = True,
-        highlight_subprocess: str | None = None,
-    ) -> go.Figure:
-        """Create an interactive Plotly visualization of the graph."""
-        pos = self._compute_layout(G)
-
-        node_colors = {}
-        node_subprocess = {}
-        if decomposition:
-            for i, sp in enumerate(decomposition.subprocesses):
-                color = get_subprocess_color(i)
-                for node in sp.nodes:
-                    node_colors[node] = color
-                    node_subprocess[node] = sp
-
     def _create_traces_and_annotations(
         self,
         G: nx.DiGraph,
@@ -169,11 +149,13 @@ class GraphVisualizer:
         node_text = []
         node_color_list = []
         node_size_list = []
+        node_ids = []  # Store node IDs for click handling
 
         for node in G.nodes():
             x, y = pos[node]
             node_x.append(x)
             node_y.append(y)
+            node_ids.append(node)  # Track node ID
 
             # Build label
             if "label" in G.nodes[node]:
@@ -211,6 +193,7 @@ class GraphVisualizer:
                 color=node_color_list,
                 line=dict(width=2, color="white"),
             ),
+            customdata=node_ids,  # Add node IDs for click handling
             showlegend=False,
         )
 
@@ -295,9 +278,18 @@ class GraphVisualizer:
         graphs: list[nx.DiGraph],
         titles: list[str],
         precomputed_layouts: list[dict] | None = None,
+        subprocess_colors: dict[str, str] | None = None,
         **kwargs,
     ) -> go.Figure:
-        """Visualize a hierarchy of graphs with an interactive slider."""
+        """
+        Visualize a hierarchy of graphs with an interactive slider.
+
+        Args:
+            graphs: List of graphs at different abstraction levels.
+            titles: Titles for each level.
+            precomputed_layouts: Optional precomputed positions for stable layouts.
+            subprocess_colors: Optional mapping of subprocess_id -> color for consistency.
+        """
 
         # Compute layouts and traces for all steps
         all_traces = []
@@ -315,9 +307,16 @@ class GraphVisualizer:
             else:
                 pos = self.compute_layout(G)
 
-            # Use rainbow colors for abstract nodes
+            # Use provided subprocess_colors if available, else assign by index
             node_colors = {}
-            if i > 0:  # Abstract levels
+            if subprocess_colors:
+                for node in G.nodes():
+                    if node in subprocess_colors:
+                        node_colors[node] = subprocess_colors[node]
+                    else:
+                        # Fallback for nodes not in mapping
+                        node_colors[node] = "#888888"
+            elif i > 0:  # Abstract levels without explicit colors
                 for j, node in enumerate(G.nodes()):
                     node_colors[node] = get_subprocess_color(j)
 
@@ -406,3 +405,279 @@ class GraphVisualizer:
         return self.visualize_graph(
             G, title=title or f"Subprocess: {subprocess.name}", show_labels=True
         )
+
+    def visualize_hierarchy_with_drilldown(
+        self,
+        graphs: list[nx.DiGraph],
+        titles: list[str],
+        subprocesses_per_level: list[list[Subprocess]],
+        original_graph: nx.DiGraph,
+        precomputed_layouts: list[dict] | None = None,
+        **kwargs,
+    ) -> go.Figure:
+        """
+        Visualize hierarchy with ability to drill down into clusters.
+
+        Click on a cluster node to see its internal structure in a separate view.
+        """
+        # Build the main hierarchy figure
+        fig = self.visualize_hierarchy(graphs, titles, precomputed_layouts, **kwargs)
+
+        # Add custom data for drill-down (subprocess info per node)
+        # This enables click events to identify which subprocess was clicked
+
+        # Update hover template to show drill-down hint for cluster nodes
+        fig.update_traces(
+            hovertemplate="<b>%{hovertext}</b><br><i>Click to drill down</i><extra></extra>",
+            selector=dict(mode="markers+text"),
+        )
+
+        return fig
+
+    def create_drilldown_view(
+        self,
+        subprocess: Subprocess,
+        original_graph: nx.DiGraph,
+        color: str | None = None,
+    ) -> go.Figure:
+        """
+        Create a detailed view of a subprocess's internal structure.
+
+        Shows internal nodes and edges, plus "ghost" nodes for external connections
+        with dotted arrows indicating where data flows in/out of the subprocess.
+
+        Args:
+            subprocess: The subprocess to visualize.
+            original_graph: The original graph (to get edge weights etc.)
+            color: Optional color for the nodes (uses subprocess color).
+
+        Returns:
+            A Plotly figure showing the subprocess internals with external connections.
+        """
+        # Extract subgraph
+        subgraph: nx.DiGraph = original_graph.subgraph(subprocess.nodes).copy()
+
+        # Find external connections
+        incoming_external: dict[
+            str, list[str]
+        ] = {}  # internal_node -> [external_sources]
+        outgoing_external: dict[
+            str, list[str]
+        ] = {}  # internal_node -> [external_targets]
+
+        for node in subprocess.nodes:
+            # Find incoming edges from outside
+            for predecessor in original_graph.predecessors(node):
+                if predecessor not in subprocess.nodes:
+                    if node not in incoming_external:
+                        incoming_external[node] = []
+                    incoming_external[node].append(predecessor)
+
+            # Find outgoing edges to outside
+            for successor in original_graph.successors(node):
+                if successor not in subprocess.nodes:
+                    if node not in outgoing_external:
+                        outgoing_external[node] = []
+                    outgoing_external[node].append(successor)
+
+        # Compute layout for the internal subgraph first
+        pos = self.compute_layout(subgraph)
+
+        # Calculate bounds for positioning ghost nodes
+        if pos:
+            x_vals = [p[0] for p in pos.values()]
+            y_vals = [p[1] for p in pos.values()]
+            x_min, x_max = min(x_vals), max(x_vals)
+            y_min, y_max = min(y_vals), max(y_vals)
+            x_range = x_max - x_min if x_max > x_min else 1
+            y_range = y_max - y_min if y_max > y_min else 1
+            margin = max(x_range, y_range) * 0.3
+        else:
+            x_min, x_max, y_min, y_max = 0, 1, 0, 1
+            margin = 0.3
+
+        # Position ghost nodes for incoming connections (on the left)
+        ghost_positions: dict[str, tuple[float, float]] = {}
+        incoming_ghosts = set()
+        for internal_node, externals in incoming_external.items():
+            for ext in externals:
+                ghost_id = f"⟵ {ext}"
+                incoming_ghosts.add(ghost_id)
+                if ghost_id not in ghost_positions:
+                    # Position to the left of the internal node
+                    int_x, int_y = pos[internal_node]
+                    ghost_positions[ghost_id] = (x_min - margin, int_y)
+
+        # Position ghost nodes for outgoing connections (on the right)
+        outgoing_ghosts = set()
+        for internal_node, externals in outgoing_external.items():
+            for ext in externals:
+                ghost_id = f"{ext} ⟶"
+                outgoing_ghosts.add(ghost_id)
+                if ghost_id not in ghost_positions:
+                    # Position to the right of the internal node
+                    int_x, int_y = pos[internal_node]
+                    ghost_positions[ghost_id] = (x_max + margin, int_y)
+
+        # Color internal nodes
+        node_colors = {}
+        if color:
+            node_colors = {node: color for node in subgraph.nodes()}
+
+        # Create traces for internal graph
+        traces, annotations = self._create_traces_and_annotations(
+            subgraph, pos, node_colors=node_colors, show_labels=True
+        )
+
+        # Add ghost nodes trace
+        if ghost_positions:
+            ghost_x = []
+            ghost_y = []
+            ghost_text = []
+            ghost_colors = []
+
+            for ghost_id in ghost_positions:
+                gx, gy = ghost_positions[ghost_id]
+                ghost_x.append(gx)
+                ghost_y.append(gy)
+
+                if ghost_id in incoming_ghosts:
+                    ghost_text.append(f"From: {ghost_id[2:]}")  # Remove "⟵ " prefix
+                    ghost_colors.append("#9E9E9E")  # Gray for incoming
+                else:
+                    ghost_text.append(f"To: {ghost_id[:-2]}")  # Remove " ⟶" suffix
+                    ghost_colors.append("#9E9E9E")  # Gray for outgoing
+
+            ghost_trace = go.Scatter(
+                x=ghost_x,
+                y=ghost_y,
+                mode="markers+text",
+                marker=dict(
+                    size=25,
+                    color=ghost_colors,
+                    symbol="diamond",
+                    line=dict(width=2, color="white"),
+                    opacity=0.7,
+                ),
+                text=[
+                    g.replace("⟵ ", "← ").replace(" ⟶", " →")
+                    for g in ghost_positions.keys()
+                ],
+                textposition="middle center",
+                textfont=dict(size=8, color="white"),
+                hovertext=ghost_text,
+                hoverinfo="text",
+                showlegend=False,
+            )
+            traces.append(ghost_trace)
+
+        # Add dotted edges for external connections
+        external_edge_traces = []
+        external_annotations = []
+
+        # Incoming external edges (dotted)
+        for internal_node, externals in incoming_external.items():
+            int_x, int_y = pos[internal_node]
+            for ext in externals:
+                ghost_id = f"⟵ {ext}"
+                gx, gy = ghost_positions[ghost_id]
+
+                external_edge_traces.append(
+                    go.Scatter(
+                        x=[gx, int_x],
+                        y=[gy, int_y],
+                        mode="lines",
+                        line=dict(width=2, color="#9E9E9E", dash="dot"),
+                        hoverinfo="none",
+                        showlegend=False,
+                    )
+                )
+
+                # Arrow annotation
+                external_annotations.append(
+                    dict(
+                        ax=gx,
+                        ay=gy,
+                        axref="x",
+                        ayref="y",
+                        x=int_x,
+                        y=int_y,
+                        xref="x",
+                        yref="y",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1.5,
+                        arrowwidth=1.5,
+                        arrowcolor="#9E9E9E",
+                        opacity=0.7,
+                    )
+                )
+
+        # Outgoing external edges (dotted)
+        for internal_node, externals in outgoing_external.items():
+            int_x, int_y = pos[internal_node]
+            for ext in externals:
+                ghost_id = f"{ext} ⟶"
+                gx, gy = ghost_positions[ghost_id]
+
+                external_edge_traces.append(
+                    go.Scatter(
+                        x=[int_x, gx],
+                        y=[int_y, gy],
+                        mode="lines",
+                        line=dict(width=2, color="#9E9E9E", dash="dot"),
+                        hoverinfo="none",
+                        showlegend=False,
+                    )
+                )
+
+                # Arrow annotation
+                external_annotations.append(
+                    dict(
+                        ax=int_x,
+                        ay=int_y,
+                        axref="x",
+                        ayref="y",
+                        x=gx,
+                        y=gy,
+                        xref="x",
+                        yref="y",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1.5,
+                        arrowwidth=1.5,
+                        arrowcolor="#9E9E9E",
+                        opacity=0.7,
+                    )
+                )
+
+        # Combine all traces
+        all_traces = external_edge_traces + traces
+        all_annotations = annotations + external_annotations
+
+        fig = go.Figure(data=all_traces)
+
+        # Count external connections for title
+        total_incoming = sum(len(v) for v in incoming_external.values())
+        total_outgoing = sum(len(v) for v in outgoing_external.values())
+        ext_info = ""
+        if total_incoming or total_outgoing:
+            ext_info = f" | ←{total_incoming} →{total_outgoing}"
+
+        fig.update_layout(
+            title=dict(
+                text=f"🔍 {subprocess.name} ({len(subprocess.nodes)} nodes{ext_info})",
+                x=0.5,
+            ),
+            showlegend=False,
+            hovermode="closest",
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            plot_bgcolor="#f8f9fa",
+            paper_bgcolor="white",
+            dragmode="zoom",
+            margin=dict(l=20, r=20, t=60, b=20),
+            annotations=all_annotations,
+        )
+
+        return fig

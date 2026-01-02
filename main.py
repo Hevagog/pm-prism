@@ -1,7 +1,9 @@
 import logging
 
 from prism.utils import download_sample_logs
-from prism.core import ProcessDecomposer
+from prism.visualization import run_interactive
+from prism.core import ProcessDecomposer, DecompositionConfig, StrategyType
+
 
 SAMPLE_URL = "http://home.agh.edu.pl/~kluza/sample_logs.zip"
 
@@ -9,19 +11,22 @@ logger = logging.Logger(__name__)
 
 
 def demo_basic_decomposition():
+    """Demo using convenience factory functions."""
     sample_dir = download_sample_logs(SAMPLE_URL)
-    csv_path = sample_dir / "repairExample.csv"
+    csv_path = sample_dir / "purchasingExample.csv"
 
     if not csv_path.exists():
         logger.error(f"Sample file not found: {csv_path}")
-        return
+        return None
 
-    decomposer = ProcessDecomposer(
-        strategy="community",
-        strategy_kwargs={"resolution": 1.0, "min_community_size": 2},
+    config = DecompositionConfig(
+        strategy_type=StrategyType.EMBEDDING,
+        optimal_size=(3, 5),
+        similarity_threshold=0.3,
     )
+    decomposer = ProcessDecomposer(config)
 
-    result = decomposer.decompose_from_csv(
+    decomposer.decompose_from_csv(
         str(csv_path),
         case_id="Case ID",
         activity_key="Activity",
@@ -33,19 +38,23 @@ def demo_basic_decomposition():
     return decomposer
 
 
-def demo_interactive_visualization(decomposer):
-    # Perform hierarchical decomposition
-    results = decomposer.decompose_hierarchical()
-    fig = decomposer.visualize_hierarchical(
-        results, method="plotly", title="Process Granularity Explorer"
-    )
-    fig.show()
+def demo_interactive_app(decomposer: ProcessDecomposer | None):
+    """
+    Launch interactive visualization app.
+
+    - Use slider to change abstraction level
+    - Click on any cluster to drill down into its internal structure
+    - Click 'Back to Overview' to return
+    """
+    if decomposer is None:
+        return
+
+    run_interactive(decomposer, port=8050)
 
 
 def main():
-    # download_sample_logs(SAMPLE_URL)
     decomposer = demo_basic_decomposition()
-    demo_interactive_visualization(decomposer)
+    demo_interactive_app(decomposer)
 
 
 if __name__ == "__main__":

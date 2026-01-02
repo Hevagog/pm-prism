@@ -6,7 +6,7 @@ For full customization, instantiate strategy classes directly.
 """
 
 from prism.core.decompositions import CommunityDetectionStrategy
-from prism.core.embedding_strategy import EmbeddingClusteringStrategy
+from prism.core.decompositions import EmbeddingClusteringStrategy
 from prism.core.labeler import LLMLabeler, SimpleLabeler
 
 

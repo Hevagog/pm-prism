@@ -82,8 +82,6 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         communities_as_sets: list[set[str]] = [set(c) for c in communities]
         return self._create_subprocesses_for_partition(graph, communities_as_sets)
 
-        return self._create_subprocesses_for_partition(graph, communities)
-
     def _calculate_merge_weight(
         self, graph: nx.DiGraph, comm1: set[str], comm2: set[str]
     ) -> float:

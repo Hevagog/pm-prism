@@ -14,8 +14,6 @@ from prism.core.decompositions import (
     HierarchicalDecompositionStrategy,
     SCCDecompositionStrategy,
     DecompositionStrategyFactory,
-)
-from prism.core.embedding_strategy import (
     EmbeddingClusteringStrategy,
     EmbeddingProvider,
     cluster_size_quality,

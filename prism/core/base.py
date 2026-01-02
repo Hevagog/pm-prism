@@ -14,6 +14,7 @@ class Subprocess:
     edges: set[tuple[str, str]] = field(default_factory=set)  # Connections
     metadata: dict[str, Any] = field(default_factory=dict)  # Additional info
     parent_id: str | None = None  # For hierarchical decomposition
+    children_ids: list[str] = field(default_factory=list)  # Child subprocess IDs
 
     def to_networkx(self) -> nx.DiGraph:
         G = nx.DiGraph()

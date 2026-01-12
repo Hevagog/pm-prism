@@ -21,7 +21,7 @@ def demo_basic_decomposition():
 
     config = DecompositionConfig(
         strategy_type=StrategyType.EMBEDDING,
-        optimal_size=(3, 5),
+        optimal_size=(5, 8),
         similarity_threshold=0.3,
     )
     decomposer = ProcessDecomposer(config)

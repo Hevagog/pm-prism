@@ -1,9 +1,7 @@
-"""Interactive Dash application for process decomposition visualization."""
-
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from dash import Dash, html, dcc, Output, Input, State, no_update
+from dash import Dash, html, dcc, Output, Input, State, no_update, ctx
 import plotly.graph_objects as go
 
 from prism.core.base import DecompositionResult
@@ -32,7 +30,6 @@ class InteractiveVisualizer:
         self.viz = GraphVisualizer()
         self._app: Dash | None = None
 
-        # Cache computed data
         self._hierarchy_results: list[DecompositionResult] = []
         self._node_to_color: dict[str, str] = {}  # original node -> color
         self._subprocess_colors: dict[str, str] = {}  # subprocess id -> color
@@ -42,27 +39,22 @@ class InteractiveVisualizer:
         """Compute hierarchy and color mappings."""
         self._hierarchy_results = self.decomposer.decompose_hierarchical()
 
-        # Build color mapping based on final level (most abstracted)
-        # Map each original node to the color of its final cluster
         if self._hierarchy_results:
             final_result = self._hierarchy_results[-1]
             for i, sp in enumerate(final_result.subprocesses):
                 color = get_subprocess_color(i)
                 self._subprocess_colors[sp.id] = color
-                # Map each node in this cluster to this color
                 for node in sp.nodes:
                     self._node_to_color[node] = color
 
     def _get_subprocess_color(self, sp) -> str:
         """Get color for a subprocess based on its nodes."""
-        # Count colors of nodes in this subprocess
         color_counts: dict[str, int] = {}
         for node in sp.nodes:
             color = self._node_to_color.get(node, "#888888")
             color_counts[color] = color_counts.get(color, 0) + 1
 
         if color_counts:
-            # Return most common color
             return max(color_counts, key=lambda c: color_counts[c])
         return "#888888"
 
@@ -78,10 +70,8 @@ class InteractiveVisualizer:
         if graph is None:
             return go.Figure()
 
-        # Generate abstract graph
         abstract_g = self.decomposer.generate_abstract_graph(result)
 
-        # Compute layout based on centroids
         base_pos = self.viz.compute_layout(graph)
         level_pos = {}
 
@@ -101,12 +91,10 @@ class InteractiveVisualizer:
                 else:
                     level_pos[sp_id] = (0.0, 0.0)
 
-        # Assign colors based on the nodes each subprocess contains
         node_colors = {}
         for sp in result.subprocesses:
             node_colors[sp.id] = self._get_subprocess_color(sp)
 
-        # Create traces
         traces, annotations = self.viz._create_traces_and_annotations(
             abstract_g, level_pos, node_colors=node_colors, show_labels=True
         )
@@ -149,7 +137,6 @@ class InteractiveVisualizer:
         if sp is None:
             return go.Figure()
 
-        # Get color based on the subprocess's nodes
         color = self._get_subprocess_color(sp)
         return self.viz.create_drilldown_view(sp, graph, color=color)
 
@@ -163,7 +150,6 @@ class InteractiveVisualizer:
 
         app.layout = html.Div(
             [
-                # Header
                 html.H1(
                     "Process Decomposition Explorer",
                     style={
@@ -172,10 +158,8 @@ class InteractiveVisualizer:
                         "marginBottom": "10px",
                     },
                 ),
-                # Controls row
                 html.Div(
                     [
-                        # Back button (hidden initially)
                         html.Button(
                             "← Back to Overview",
                             id="back-button",
@@ -192,7 +176,6 @@ class InteractiveVisualizer:
                                 "marginRight": "20px",
                             },
                         ),
-                        # Level slider container
                         html.Div(
                             [
                                 html.Label(
@@ -211,7 +194,7 @@ class InteractiveVisualizer:
                                             step=1,
                                             value=0,
                                             marks={
-                                                i: f"L{i+1}"
+                                                i: f"L{i + 1}"
                                                 for i in range(max_level + 1)
                                             },
                                         ),
@@ -230,7 +213,6 @@ class InteractiveVisualizer:
                         "justifyContent": "center",
                     },
                 ),
-                # Current view info
                 html.Div(
                     id="view-info",
                     style={
@@ -239,14 +221,12 @@ class InteractiveVisualizer:
                         "marginBottom": "10px",
                     },
                 ),
-                # Main graph
                 dcc.Graph(
                     id="main-graph",
                     figure=self._create_hierarchy_figure(0),
                     style={"height": "80vh"},
                     config={"displayModeBar": True, "scrollZoom": True},
                 ),
-                # Hidden store for current state
                 dcc.Store(
                     id="view-state",
                     data={"mode": "hierarchy", "level": 0, "subprocess_id": None},
@@ -257,9 +237,7 @@ class InteractiveVisualizer:
         @app.callback(
             [
                 Output("main-graph", "figure"),
-                Output(
-                    "main-graph", "clickData"
-                ),  # Reset clickData to allow re-clicking same node
+                Output("main-graph", "clickData"),
                 Output("view-state", "data"),
                 Output("back-button", "style"),
                 Output("slider-container", "style"),
@@ -274,11 +252,8 @@ class InteractiveVisualizer:
             prevent_initial_call=True,
         )
         def update_view(click_data, back_clicks, slider_value, view_state):
-            from dash import ctx
-
             triggered_id = ctx.triggered_id
 
-            # Default styles
             back_hidden = {
                 "display": "none",
                 "padding": "10px 20px",
@@ -294,7 +269,6 @@ class InteractiveVisualizer:
             slider_visible = {"display": "flex", "alignItems": "center"}
             slider_hidden = {"display": "none"}
 
-            # Handle back button - reset clickData to None so same node can be clicked again
             if triggered_id == "back-button":
                 level = view_state.get("level", 0)
                 fig = self._create_hierarchy_figure(level)
@@ -308,7 +282,6 @@ class InteractiveVisualizer:
                     f"Showing hierarchy level {level + 1}",
                 )
 
-            # Handle slider change
             if triggered_id == "level-slider":
                 if view_state.get("mode") == "hierarchy":
                     fig = self._create_hierarchy_figure(slider_value)
@@ -326,7 +299,6 @@ class InteractiveVisualizer:
                         f"Showing hierarchy level {slider_value + 1}",
                     )
                 else:
-                    # In drilldown mode, slider doesn't change view but updates stored level
                     return (
                         no_update,
                         no_update,
@@ -336,9 +308,7 @@ class InteractiveVisualizer:
                         no_update,
                     )
 
-            # Handle click on graph
             if triggered_id == "main-graph" and click_data:
-                # Only handle clicks in hierarchy mode
                 if view_state.get("mode") != "hierarchy":
                     return (
                         no_update,
@@ -349,7 +319,6 @@ class InteractiveVisualizer:
                         no_update,
                     )
 
-                # Get clicked point
                 point = click_data.get("points", [{}])[0]
                 customdata = point.get("customdata")
 
@@ -359,7 +328,6 @@ class InteractiveVisualizer:
                     sp = self._get_subprocess_from_level(subprocess_id, current_level)
 
                     if sp and len(sp.nodes) > 1:
-                        # Drill down into cluster
                         fig = self._create_drilldown_figure(
                             subprocess_id, current_level
                         )

@@ -4,7 +4,12 @@ import uuid
 import heapq
 import itertools
 
-from prism.core import DecompositionStrategy, Subprocess, SubprocessLabeler
+from prism.core.base import (
+    DecompositionStrategy,
+    Subprocess,
+    SubprocessLabeler,
+    is_boundary_node,
+)
 
 
 class CommunityDetectionStrategy(DecompositionStrategy):
@@ -66,7 +71,29 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         if graph.number_of_nodes() == 0:
             return []
 
-        undirected = graph.to_undirected()
+        boundary_nodes = {
+            node_id
+            for node_id, node_data in graph.nodes(data=True)
+            if is_boundary_node(str(node_id), node_data)
+        }
+
+        working_graph = graph.copy()
+        if boundary_nodes:
+            working_graph.remove_nodes_from(boundary_nodes)
+
+        if working_graph.number_of_nodes() == 0:
+            return [
+                Subprocess(
+                    id=f"sp_{uuid.uuid4().hex[:8]}",
+                    name=str(graph.nodes[node_id].get("label", node_id)),
+                    nodes={node_id},
+                    edges=set(),
+                    metadata={"detection_method": "boundary", "is_boundary": True},
+                )
+                for node_id in sorted(boundary_nodes)
+            ]
+
+        undirected = working_graph.to_undirected()
 
         try:
             communities = community.louvain_communities(
@@ -80,7 +107,20 @@ class CommunityDetectionStrategy(DecompositionStrategy):
 
         # Convert frozensets to sets for type consistency
         communities_as_sets: list[set[str]] = [set(c) for c in communities]
-        return self._create_subprocesses_for_partition(graph, communities_as_sets)
+        subprocesses = self._create_subprocesses_for_partition(graph, communities_as_sets)
+
+        for node_id in sorted(boundary_nodes):
+            subprocesses.append(
+                Subprocess(
+                    id=f"sp_{uuid.uuid4().hex[:8]}",
+                    name=str(graph.nodes[node_id].get("label", node_id)),
+                    nodes={node_id},
+                    edges=set(),
+                    metadata={"detection_method": "boundary", "is_boundary": True},
+                )
+            )
+
+        return subprocesses
 
     def _calculate_merge_weight(
         self, graph: nx.DiGraph, comm1: set[str], comm2: set[str]
@@ -122,7 +162,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         comm_id_map = {id(c): c for c in current_partition}
 
         # Build initial merge candidates
-        pq = []
+        pq: list[tuple[float, int, int]] = []
 
         def push_merge_candidate(c1, c2):
             t1 = node_to_target.get(next(iter(c1))) if c1 else -1
@@ -134,14 +174,16 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                 heapq.heappush(pq, (-w, id(c1), id(c2)))
 
         # Group by target index first
-        comp_by_target = {}
+        comp_by_target: dict[int, list[set[str]]] = {}
         for c in current_partition:
             if not c:
                 continue
-            t = node_to_target.get(next(iter(c)))
-            if t not in comp_by_target:
-                comp_by_target[t] = []
-            comp_by_target[t].append(c)
+            target_index = node_to_target.get(next(iter(c)))
+            if target_index is None:
+                continue
+            if target_index not in comp_by_target:
+                comp_by_target[target_index] = []
+            comp_by_target[target_index].append(c)
 
         for t, comms in comp_by_target.items():
             for c1, c2 in itertools.combinations(comms, 2):
@@ -199,7 +241,34 @@ class CommunityDetectionStrategy(DecompositionStrategy):
         if graph.number_of_nodes() == 0:
             return []
 
-        undirected = graph.to_undirected()
+        boundary_nodes = {
+            node_id
+            for node_id, node_data in graph.nodes(data=True)
+            if is_boundary_node(str(node_id), node_data)
+        }
+
+        working_graph = graph.copy()
+        if boundary_nodes:
+            working_graph.remove_nodes_from(boundary_nodes)
+
+        if working_graph.number_of_nodes() == 0:
+            return [
+                [
+                    Subprocess(
+                        id=f"sp_{uuid.uuid4().hex[:8]}",
+                        name=str(graph.nodes[node_id].get("label", node_id)),
+                        nodes={node_id},
+                        edges=set(),
+                        metadata={
+                            "detection_method": "boundary",
+                            "is_boundary": True,
+                        },
+                    )
+                    for node_id in sorted(boundary_nodes)
+                ]
+            ]
+
+        undirected = working_graph.to_undirected()
 
         try:
             partitions_iter = list(
@@ -211,7 +280,7 @@ class CommunityDetectionStrategy(DecompositionStrategy):
             )
 
             # Ensure "All singletons" partition is the base (Level 0)
-            singletons = [{n} for n in graph.nodes()]
+            singletons = [{n} for n in working_graph.nodes()]
 
             all_partitions = [singletons] + partitions_iter
 
@@ -227,15 +296,26 @@ class CommunityDetectionStrategy(DecompositionStrategy):
 
             full_hierarchy = []
 
+            boundary_subprocesses = [
+                Subprocess(
+                    id=f"sp_{uuid.uuid4().hex[:8]}",
+                    name=str(graph.nodes[node_id].get("label", node_id)),
+                    nodes={node_id},
+                    edges=set(),
+                    metadata={"detection_method": "boundary", "is_boundary": True},
+                )
+                for node_id in sorted(boundary_nodes)
+            ]
+
             # Process levels with interpolation
             for i in range(len(unique_partitions) - 1):
                 p_fine = unique_partitions[i]
                 p_coarse = unique_partitions[i + 1]
 
                 # Add fine level
-                full_hierarchy.append(
-                    self._create_subprocesses_for_partition(graph, p_fine, min_size=1)
-                )
+                level = self._create_subprocesses_for_partition(graph, p_fine, min_size=1)
+                level.extend(boundary_subprocesses)
+                full_hierarchy.append(level)
 
                 # Interpolate
                 substeps = self._interpolate_partitions(graph, p_fine, p_coarse)
@@ -243,19 +323,19 @@ class CommunityDetectionStrategy(DecompositionStrategy):
                 # Exclude the last element (which equals p_coarse) to avoid duplication.
                 if substeps:
                     for step in substeps[:-1]:
-                        full_hierarchy.append(
-                            self._create_subprocesses_for_partition(
-                                graph, step, min_size=1
-                            )
+                        level = self._create_subprocesses_for_partition(
+                            graph, step, min_size=1
                         )
+                        level.extend(boundary_subprocesses)
+                        full_hierarchy.append(level)
 
             # Add final level
             if unique_partitions:
-                full_hierarchy.append(
-                    self._create_subprocesses_for_partition(
-                        graph, unique_partitions[-1], min_size=1
-                    )
+                level = self._create_subprocesses_for_partition(
+                    graph, unique_partitions[-1], min_size=1
                 )
+                level.extend(boundary_subprocesses)
+                full_hierarchy.append(level)
 
             return full_hierarchy
 

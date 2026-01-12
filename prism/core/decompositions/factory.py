@@ -1,6 +1,7 @@
 from typing import Optional
 from prism.core.base import DecompositionStrategy, SubprocessLabeler
 from prism.core.config import DecompositionConfig, StrategyType
+from prism.core.labeler import LLMLabeler
 from prism.core.decompositions.louvain import CommunityDetectionStrategy
 from prism.core.decompositions.cut_vertex import CutVertexStrategy
 from prism.core.decompositions.gateway_based import GatewayBasedStrategy
@@ -26,8 +27,12 @@ class DecompositionStrategyFactory:
         Returns:
             An instance of a DecompositionStrategy.
         """
+        effective_labeler = labeler
+        if effective_labeler is None:
+            effective_labeler = LLMLabeler()
+
         return DecompositionStrategyFactory._create_from_type(
-            config.strategy_type, config, labeler
+            config.strategy_type, config, effective_labeler
         )
 
     @staticmethod

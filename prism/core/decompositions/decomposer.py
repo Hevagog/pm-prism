@@ -1,3 +1,4 @@
+import uuid
 from typing import Any
 import pandas as pd
 import networkx as nx
@@ -8,10 +9,15 @@ from prism.core.base import (
     DecompositionResult,
     Subprocess,
     SubprocessLabeler,
+    is_boundary_node,
+    START_EVENT_ID,
+    END_EVENT_ID,
 )
 from prism.core.config import DecompositionConfig
+from prism.core.decompositions.factory import DecompositionStrategyFactory
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
+from prism.visualization.graph_viz import get_subprocess_color
 
 
 class ProcessDecomposer:
@@ -43,8 +49,6 @@ class ProcessDecomposer:
             labeler: Optional labeler to be used when creating strategy from config.
         """
         if isinstance(strategy, DecompositionConfig):
-            from prism.core.decompositions.factory import DecompositionStrategyFactory
-
             self._strategy = DecompositionStrategyFactory.create_strategy(
                 strategy, labeler=labeler
             )
@@ -125,6 +129,10 @@ class ProcessDecomposer:
 
         results: list[DecompositionResult] = []
         for stage_subprocesses in levels_subprocesses:
+            stage_subprocesses = self._ensure_boundary_subprocesses(
+                self._graph, stage_subprocesses
+            )
+
             # Build hierarchy map for this level
             hierarchy: dict[str, list[str]] = {}
             for sp in stage_subprocesses:
@@ -147,6 +155,67 @@ class ProcessDecomposer:
 
         return results
 
+    def _ensure_boundary_subprocesses(
+        self, graph: nx.DiGraph, subprocesses: list[Subprocess]
+    ) -> list[Subprocess]:
+        boundary_nodes = [
+            node_id
+            for node_id, node_data in graph.nodes(data=True)
+            if is_boundary_node(str(node_id), node_data)
+        ]
+
+        if not boundary_nodes:
+            return subprocesses
+
+        cleaned: list[Subprocess] = []
+        for sp in subprocesses:
+            if not (sp.nodes & set(boundary_nodes)):
+                cleaned.append(sp)
+                continue
+
+            remaining_nodes = set(sp.nodes) - set(boundary_nodes)
+            if not remaining_nodes:
+                continue
+
+            remaining_edges = {
+                (u, v)
+                for (u, v) in sp.edges
+                if u in remaining_nodes and v in remaining_nodes
+            }
+
+            cleaned.append(
+                Subprocess(
+                    id=sp.id,
+                    name=sp.name,
+                    nodes=remaining_nodes,
+                    edges=remaining_edges,
+                    metadata=sp.metadata,
+                    parent_id=sp.parent_id,
+                    children_ids=sp.children_ids,
+                )
+            )
+
+        existing_boundary_nodes = set()
+        for sp in cleaned:
+            existing_boundary_nodes |= sp.nodes & set(boundary_nodes)
+
+        for node_id in boundary_nodes:
+            if node_id in existing_boundary_nodes:
+                continue
+
+            display_name = graph.nodes[node_id].get("label", node_id)
+            cleaned.append(
+                Subprocess(
+                    id=f"sp_{uuid.uuid4().hex[:8]}",
+                    name=str(display_name),
+                    nodes={node_id},
+                    edges=set(),
+                    metadata={"detection_method": "boundary", "is_boundary": True},
+                )
+            )
+
+        return cleaned
+
     def generate_abstract_graph(self, result: DecompositionResult) -> nx.DiGraph:
         """Generate an abstract graph where nodes represent subprocesses."""
         G_abstract = nx.DiGraph()
@@ -162,6 +231,11 @@ class ProcessDecomposer:
                 sp.id,
                 label=sp.name,
                 size=len(sp.nodes),  # Simple metric for size
+                is_boundary=bool(sp.metadata.get("is_boundary"))
+                if isinstance(sp.metadata, dict)
+                else False,
+                is_start_event=(START_EVENT_ID in sp.nodes),
+                is_end_event=(END_EVENT_ID in sp.nodes),
             )
 
         # Add edges
@@ -186,6 +260,8 @@ class ProcessDecomposer:
 
         # Apply decomposition strategy
         subprocesses = self._strategy.decompose(self._graph, **kwargs)
+
+        subprocesses = self._ensure_boundary_subprocesses(self._graph, subprocesses)
 
         # Build hierarchy
         hierarchy: dict[str, list[str]] = {}
@@ -222,7 +298,7 @@ class ProcessDecomposer:
                 return viz.visualize_graph(self._graph, self._result, **kwargs)
             case "pm4py":
                 if self._adapter and hasattr(self._adapter, "view_dfg"):
-                    self._adapter.view_dfg()  # type: ignore[attr-defined]
+                    self._adapter.view_dfg()
                 else:
                     raise ValueError("PM4Py visualization requires DFG adapter")
             case _:
@@ -248,9 +324,6 @@ class ProcessDecomposer:
 
         # 2. Build consistent color mapping based on original nodes
         # Each original node gets a color based on which final cluster it belongs to
-        # Then subprocesses inherit colors from the nodes they contain
-        from prism.visualization.graph_viz import get_subprocess_color
-
         # Get the final level (most abstracted) to determine cluster colors
         final_result = results[-1] if results else None
         node_to_color: dict[str, str] = {}
@@ -273,11 +346,11 @@ class ProcessDecomposer:
             # Compute stable layout based on centroids
             level_pos = {}
             for sp_id in abstract_g.nodes():
-                sp = res.get_subprocess_by_id(sp_id)
-                if sp:
+                subprocess = res.get_subprocess_by_id(sp_id)
+                if subprocess:
                     sum_x, sum_y = 0.0, 0.0
                     n_count = 0
-                    for node in sp.nodes:
+                    for node in subprocess.nodes:
                         if node in base_pos:
                             x, y = base_pos[node]
                             sum_x += x
@@ -293,7 +366,7 @@ class ProcessDecomposer:
                     # (the color of the majority of nodes in this subprocess)
                     if node_to_color:
                         color_counts: dict[str, int] = {}
-                        for node in sp.nodes:
+                        for node in subprocess.nodes:
                             c = node_to_color.get(node, "#888888")
                             color_counts[c] = color_counts.get(c, 0) + 1
                         # Pick the most common color
@@ -349,8 +422,6 @@ class ProcessDecomposer:
 
         # Determine color from subprocess index if not provided
         if color is None:
-            from prism.visualization.graph_viz import get_subprocess_color
-
             sp_index = next(
                 (
                     i

@@ -1,0 +1,88 @@
+from dataclasses import dataclass
+
+from prism.utils import download_sample_logs
+from prism.core import ProcessDecomposer, DecompositionConfig, StrategyType
+from prism.core.labeler import LLMLabeler, SimpleLabeler
+
+
+@dataclass(frozen=True)
+class LabelCheckResult:
+    subprocess_id: str
+    label: str
+    ok: bool
+    reason: str | None = None
+
+
+def _check_label(label: str) -> tuple[bool, str | None]:
+    cleaned = " ".join(label.strip().split())
+    if not cleaned:
+        return False, "empty"
+
+    words = cleaned.split()
+    if not (2 <= len(words) <= 4):
+        return False, f"word_count={len(words)}"
+
+    banned_tokens = {
+        "process",
+        "workflow",
+        "activities",
+        "activity",
+        "cluster",
+        "group",
+    }
+    if any(w.lower() in banned_tokens for w in words):
+        return False, "contains_generic_token"
+
+    banned_chars = set("\n\r\t:;\"'()[]{}")
+    if any(ch in banned_chars for ch in cleaned):
+        return False, "contains_punctuation_or_formatting"
+
+    return True, None
+
+
+def run() -> int:
+    labeler = LLMLabeler(model="openai/gpt-oss-120b")
+
+    sample_zip = "http://home.agh.edu.pl/~kluza/sample_logs.zip"
+    log_path = download_sample_logs(sample_zip) / "purchasingExample.csv"
+
+    decomposer = ProcessDecomposer(
+        DecompositionConfig(strategy_type=StrategyType.EMBEDDING, optimal_size=(3, 5)),
+        labeler=SimpleLabeler(),
+    )
+
+    result = decomposer.decompose_from_csv(
+        str(log_path),
+        case_id="Case ID",
+        activity_key="Activity",
+        timestamp_key="Start Timestamp",
+    )
+
+    multi = [sp for sp in result.subprocesses if len(sp.nodes) > 1]
+
+    print(f"Clusters to label: {len(multi)}")
+
+    checks: list[LabelCheckResult] = []
+    try:
+        labels = labeler.label_batch(multi, context={"domain": "purchasing"})
+        for sp in multi:
+            label = labels.get(sp.id, "")
+            ok, reason = _check_label(label)
+            checks.append(LabelCheckResult(sp.id, label, ok, reason))
+    except Exception as exc:
+        for sp in multi:
+            checks.append(LabelCheckResult(sp.id, "", False, f"llm_error: {exc}"))
+
+    ok_count = sum(1 for c in checks if c.ok)
+    bad = [c for c in checks if not c.ok]
+
+    for c in checks:
+        status = "OK" if c.ok else f"BAD ({c.reason})"
+        print(f"{status}: {c.subprocess_id}: {c.label}")
+
+    print(f"\nSummary: ok={ok_count} bad={len(bad)}")
+    return 0 if not bad else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())

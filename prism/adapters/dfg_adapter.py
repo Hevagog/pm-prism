@@ -6,7 +6,12 @@ import pandas as pd
 import pm4py
 from pm4py.objects.log.obj import EventLog
 
-from prism.core.base import ProcessModelAdapter, DecompositionResult
+from prism.core.base import (
+    ProcessModelAdapter,
+    DecompositionResult,
+    START_EVENT_ID,
+    END_EVENT_ID,
+)
 
 
 class DFGAdapter(ProcessModelAdapter):
@@ -80,6 +85,21 @@ class DFGAdapter(ProcessModelAdapter):
         for (source, target), frequency in dfg.items():
             G.add_edge(source, target, weight=frequency, frequency=frequency)
 
+        if start_activities is None:
+            start_activities = {
+                node: 1
+                for node in G.nodes()
+                if G.in_degree(node) == 0 and node not in (START_EVENT_ID, END_EVENT_ID)
+            }
+
+        if end_activities is None:
+            end_activities = {
+                node: 1
+                for node in G.nodes()
+                if G.out_degree(node) == 0
+                and node not in (START_EVENT_ID, END_EVENT_ID)
+            }
+
         if start_activities:
             for activity, freq in start_activities.items():
                 if activity not in G:
@@ -93,6 +113,52 @@ class DFGAdapter(ProcessModelAdapter):
                     G.add_node(activity)
                 G.nodes[activity]["is_end"] = True
                 G.nodes[activity]["end_frequency"] = freq
+
+        G.add_node(
+            START_EVENT_ID,
+            label="Start",
+            is_boundary=True,
+            is_start_event=True,
+        )
+        G.add_node(
+            END_EVENT_ID,
+            label="End",
+            is_boundary=True,
+            is_end_event=True,
+        )
+
+        if start_activities:
+            for activity, freq in start_activities.items():
+                if activity == END_EVENT_ID:
+                    continue
+                G.add_edge(
+                    START_EVENT_ID,
+                    activity,
+                    weight=freq,
+                    frequency=freq,
+                    is_boundary_edge=True,
+                )
+
+        if end_activities:
+            for activity, freq in end_activities.items():
+                if activity == START_EVENT_ID:
+                    continue
+                G.add_edge(
+                    activity,
+                    END_EVENT_ID,
+                    weight=freq,
+                    frequency=freq,
+                    is_boundary_edge=True,
+                )
+
+        if G.number_of_nodes() == 2 and G.number_of_edges() == 0:
+            G.add_edge(
+                START_EVENT_ID,
+                END_EVENT_ID,
+                weight=1,
+                frequency=1,
+                is_boundary_edge=True,
+            )
 
         return G
 

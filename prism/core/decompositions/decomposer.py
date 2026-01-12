@@ -14,7 +14,7 @@ from prism.core.base import (
     END_EVENT_ID,
 )
 from prism.core.config import DecompositionConfig
-from prism.core.decompositions import DecompositionStrategyFactory
+from prism.core.decompositions.factory import DecompositionStrategyFactory
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
 from prism.visualization.graph_viz import get_subprocess_color

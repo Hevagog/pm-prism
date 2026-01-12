@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any
 from pathlib import Path
 import networkx as nx

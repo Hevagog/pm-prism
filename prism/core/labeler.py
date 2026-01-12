@@ -251,7 +251,7 @@ class LLMLabeler(SubprocessLabeler):
             "- Start with a verb.\n"
             "- No quotes. No punctuation. No numbering.\n"
             "- Forbidden words: Process, Workflow, Activities, Activity, Cluster, Group.\n"
-            "- Bad example (do NOT output): Process RFQ and Quotations\n"
+            "- Bad example (do NOT output): Workflow for RFQ and Quotations\n"
             "- Output ONLY the labels."
         )
 

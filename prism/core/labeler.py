@@ -174,7 +174,7 @@ class LLMLabeler(SubprocessLabeler):
             "- Invoice\n"
             "- Purchasing\n"
             "- Process Activities\n"
-            "- Process RFQ and Quotations\n"
+            "- Invoice Processing\n"
             "- Cluster 1\n\n"
             "Rules:\n"
             "- Output exactly ONE line.\n"

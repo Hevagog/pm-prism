@@ -2,11 +2,6 @@ from typing import Optional
 from prism.core.base import DecompositionStrategy, SubprocessLabeler
 from prism.core.config import DecompositionConfig, StrategyType
 from prism.core.labeler import LLMLabeler
-from prism.core.decompositions.louvain import CommunityDetectionStrategy
-from prism.core.decompositions.cut_vertex import CutVertexStrategy
-from prism.core.decompositions.gateway_based import GatewayBasedStrategy
-from prism.core.decompositions.scd import SCCDecompositionStrategy
-from prism.core.decompositions.hierarchical import HierarchicalDecompositionStrategy
 from prism.core.decompositions.embedding_strategy import EmbeddingClusteringStrategy
 
 
@@ -42,35 +37,6 @@ class DecompositionStrategyFactory:
         labeler: Optional[SubprocessLabeler] = None,
     ) -> DecompositionStrategy:
         match strategy_type:
-            case StrategyType.LOUVAIN:
-                return CommunityDetectionStrategy(
-                    resolution=config.resolution,
-                    min_community_size=config.min_size,
-                    labeler=labeler,
-                )
-            case StrategyType.CUT_VERTEX:
-                return CutVertexStrategy()
-            case StrategyType.GATEWAY:
-                return GatewayBasedStrategy(degree_threshold=config.degree_threshold)
-            case StrategyType.SCC:
-                return SCCDecompositionStrategy(min_scc_size=config.min_size)
-            case StrategyType.HIERARCHICAL:
-                primary_type = config.primary_type or StrategyType.LOUVAIN
-                primary_strategy = DecompositionStrategyFactory._create_from_type(
-                    primary_type, config, labeler
-                )
-
-                secondary_strategy = None
-                if config.secondary_type:
-                    secondary_strategy = DecompositionStrategyFactory._create_from_type(
-                        config.secondary_type, config, labeler
-                    )
-
-                return HierarchicalDecompositionStrategy(
-                    primary_strategy=primary_strategy,
-                    secondary_strategy=secondary_strategy,
-                    max_subprocess_size=config.max_subprocess_size,
-                )
             case StrategyType.EMBEDDING:
                 return EmbeddingClusteringStrategy(
                     model_name=config.model_name,

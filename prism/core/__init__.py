@@ -7,19 +7,14 @@ from prism.core.base import (
 )
 from prism.core.config import DecompositionConfig, StrategyType
 from prism.core.decompositions import (
-    CommunityDetectionStrategy,
     ProcessDecomposer,
-    CutVertexStrategy,
-    GatewayBasedStrategy,
-    HierarchicalDecompositionStrategy,
-    SCCDecompositionStrategy,
     DecompositionStrategyFactory,
     EmbeddingClusteringStrategy,
     EmbeddingProvider,
     cluster_size_quality,
 )
 from prism.core.labeler import LLMLabeler, SimpleLabeler
-from prism.core.strategies import embedding_strategy, community_strategy
+from prism.core.strategies import embedding_strategy
 
 __all__ = [
     # Base classes

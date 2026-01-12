@@ -5,7 +5,6 @@ This module provides easy-to-use factory functions for common strategy configura
 For full customization, instantiate strategy classes directly.
 """
 
-from prism.core.decompositions import CommunityDetectionStrategy
 from prism.core.decompositions import EmbeddingClusteringStrategy
 from prism.core.labeler import LLMLabeler, SimpleLabeler
 
@@ -42,34 +41,5 @@ def embedding_strategy(
         model_name=model_name,
         optimal_size=optimal_size,
         similarity_threshold=similarity_threshold,
-        labeler=labeler,
-    )
-
-
-def community_strategy(
-    *,
-    use_llm_labeler: bool = True,
-    resolution: float = 1.0,
-) -> CommunityDetectionStrategy:
-    """
-    Create a community detection strategy.
-
-    Uses Louvain algorithm to detect communities based on graph structure.
-
-    Args:
-        use_llm_labeler: If True, use LLM for cluster naming (requires GROQ_API_KEY).
-        resolution: Louvain resolution parameter (higher = more communities).
-
-    Returns:
-        Configured CommunityDetectionStrategy.
-
-    Example:
-        >>> strategy = community_strategy(resolution=1.5)
-        >>> decomposer = ProcessDecomposer(strategy)
-    """
-    labeler = LLMLabeler() if use_llm_labeler else SimpleLabeler()
-
-    return CommunityDetectionStrategy(
-        resolution=resolution,
         labeler=labeler,
     )

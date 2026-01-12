@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from pathlib import Path
+import sys
 import networkx as nx
 import pandas as pd
 import pm4py
@@ -68,11 +69,143 @@ class DFGAdapter(ProcessModelAdapter):
         else:
             raise TypeError(f"Unsupported source type: {type(source)}")
 
+        # Be forgiving about accidental whitespace in column names.
+        df.columns = [str(c).strip() for c in df.columns]
+
+        case_id, activity_key, timestamp_key = self._resolve_columns(
+            df,
+            case_id=case_id,
+            activity_key=activity_key,
+            timestamp_key=timestamp_key,
+        )
+
+        if timestamp_key == "__pm_prism_generated_timestamp__":
+            # Generate a stable per-case ordering timestamp when the log has none.
+            # pm4py expects a timestamp column; this keeps the pipeline usable.
+            if case_id not in df.columns:
+                raise ValueError(
+                    "Cannot generate timestamps without a valid case_id column."
+                )
+            base = pd.Timestamp("1970-01-01")
+            df[timestamp_key] = base + pd.to_timedelta(
+                df.groupby(case_id).cumcount(), unit="s"
+            )
+
         df = pm4py.format_dataframe(
             df, case_id=case_id, activity_key=activity_key, timestamp_key=timestamp_key
         )
 
         return pm4py.convert_to_event_log(df)
+
+    def _resolve_columns(
+        self,
+        df: pd.DataFrame,
+        case_id: str,
+        activity_key: str,
+        timestamp_key: str,
+    ) -> tuple[str, str, str]:
+        columns = [str(c) for c in df.columns]
+
+        resolved_case = self._resolve_one(
+            columns,
+            requested=case_id,
+            role="case id",
+            heuristics=["case", "caseid", "case id", "case:concept:name"],
+            allow_generate=False,
+        )
+        resolved_activity = self._resolve_one(
+            columns,
+            requested=activity_key,
+            role="activity",
+            heuristics=["activity", "concept:name", "event", "task"],
+            allow_generate=False,
+        )
+        resolved_time = self._resolve_one(
+            columns,
+            requested=timestamp_key,
+            role="timestamp",
+            heuristics=["timestamp", "time", "date"],
+            allow_generate=True,
+        )
+
+        return resolved_case, resolved_activity, resolved_time
+
+    def _resolve_one(
+        self,
+        columns: list[str],
+        requested: str,
+        role: str,
+        heuristics: list[str],
+        allow_generate: bool,
+    ) -> str:
+        if requested in columns:
+            return requested
+
+        def _norm(s: str) -> str:
+            return "".join(ch.lower() for ch in s.strip() if ch.isalnum())
+
+        norm_cols = {c: _norm(c) for c in columns}
+        req_norm = _norm(requested)
+        if req_norm and req_norm in norm_cols.values():
+            for c, n in norm_cols.items():
+                if n == req_norm:
+                    return c
+
+        hits: list[str] = []
+        for c, n in norm_cols.items():
+            if any(h in n for h in [_norm(h) for h in heuristics]):
+                hits.append(c)
+
+        # If there's exactly one plausible match, just use it (still simple + usable).
+        if len(hits) == 1:
+            print(
+                f"Column '{requested}' not found; using '{hits[0]}' as {role}."
+            )
+            return hits[0]
+
+        # Ambiguous (or none): prompt in TTY, otherwise fail with actionable message.
+        if not sys.stdin.isatty():
+            raise ValueError(
+                f"{role} column '{requested}' not found. Available columns: {columns}. "
+                f"Pass correct {role} column name(s) to decompose_from_csv()."
+            )
+
+        return self._prompt_for_column(columns, requested, role, hits, allow_generate)
+
+    def _prompt_for_column(
+        self,
+        columns: list[str],
+        requested: str,
+        role: str,
+        candidates: list[str],
+        allow_generate: bool,
+    ) -> str:
+        print(f"\nCould not find {role} column: '{requested}'.")
+        if candidates:
+            print(f"Possible matches for {role}: {candidates}")
+
+        print("Available columns:")
+        for i, c in enumerate(columns, start=1):
+            print(f"  {i}. {c}")
+
+        if allow_generate and role == "timestamp":
+            print("  0. (generate) Use per-case row order as timestamp")
+
+        while True:
+            raw = input(f"Select {role} column number: ").strip()
+            if allow_generate and role == "timestamp" and raw == "0":
+                return "__pm_prism_generated_timestamp__"
+
+            if raw.isdigit():
+                idx = int(raw)
+                if 1 <= idx <= len(columns):
+                    return columns[idx - 1]
+
+            # Allow typing the column name directly.
+            if raw in columns:
+                return raw
+
+            print("Invalid choice. Enter a number from the list.")
 
     def _dfg_dict_to_networkx(
         self,

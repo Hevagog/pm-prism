@@ -1,8 +1,9 @@
 import math
+from typing import Any, cast
 import networkx as nx
 import plotly.graph_objects as go
 
-from prism.core.base import DecompositionResult, Subprocess
+from prism.core.base import DecompositionResult, Subprocess, START_EVENT_ID, END_EVENT_ID
 
 
 SUBPROCESS_COLORS = [
@@ -38,6 +39,49 @@ class GraphVisualizer:
         if len(G) == 0:
             return {}
 
+        def find_start_end() -> tuple[str | None, str | None]:
+            start_node: str | None = None
+            end_node: str | None = None
+            for node_id, node_data in G.nodes(data=True):
+                node_key = str(node_id)
+                if node_data.get("is_start_event") or node_key == START_EVENT_ID:
+                    start_node = node_key
+                if node_data.get("is_end_event") or node_key == END_EVENT_ID:
+                    end_node = node_key
+            return start_node, end_node
+
+        def enforce_start_end(
+            pos: dict[str, tuple[float, float]],
+            start_node: str | None,
+            end_node: str | None,
+        ) -> dict[str, tuple[float, float]]:
+            if start_node is None and end_node is None:
+                return pos
+
+            xs_other: list[float] = []
+            ys_other: list[float] = []
+            for node_id, (x, y) in pos.items():
+                if node_id in {start_node, end_node}:
+                    continue
+                xs_other.append(x)
+                ys_other.append(y)
+
+            if xs_other:
+                min_x = min(xs_other)
+                max_x = max(xs_other)
+                span = max(max_x - min_x, 1e-6)
+                pad = 0.35 * span
+                mid_y = sum(ys_other) / len(ys_other)
+            else:
+                min_x, max_x, pad, mid_y = -1.0, 1.0, 1.0, 0.0
+
+            if start_node is not None and start_node in pos:
+                pos[start_node] = (min_x - pad, mid_y)
+            if end_node is not None and end_node in pos:
+                pos[end_node] = (max_x + pad, mid_y)
+
+            return pos
+
         layout_funcs = {
             "spring": nx.spring_layout,
             "kamada_kawai": nx.kamada_kawai_layout,
@@ -48,16 +92,64 @@ class GraphVisualizer:
 
         layout_func = layout_funcs.get(self.layout_algorithm, nx.kamada_kawai_layout)
 
+        start_node, end_node = find_start_end()
+
         try:
             if self.layout_algorithm == "spring":
-                k_val = 2.5 / math.sqrt(len(G)) if len(G) > 0 else None
-                return nx.spring_layout(
-                    G, k=k_val, weight=None, seed=42, iterations=100
-                )
+                # Two-stage layout for a less tangled result:
+                # 1) an inexpensive global layout (kamada-kawai for smaller graphs)
+                # 2) a spring relaxation step that starts from (1)
+                # This stays dependency-free and works for all abstraction levels.
+                H = G.to_undirected()
+                n = len(H)
 
-            return layout_func(G)
+                if n <= 200:
+                    pos = nx.kamada_kawai_layout(H)
+                else:
+                    k_init = 2.0 / math.sqrt(n) if n > 0 else None
+                    pos = nx.spring_layout(H, k=k_init, weight=None, seed=42, iterations=50)
+
+                # Pin Start/End to far left/right and align them vertically *before* relaxation,
+                # so the spring simulation can settle the rest of the nodes around that.
+                pos = cast(dict[str, tuple[float, float]], pos)
+                pos = enforce_start_end(pos, start_node, end_node)
+
+                fixed: list[str] = []
+                if start_node is not None and start_node in pos:
+                    fixed.append(start_node)
+                if end_node is not None and end_node in pos:
+                    fixed.append(end_node)
+
+                k_relax = 2.2 / math.sqrt(n) if n > 0 else None
+                if fixed:
+                    pos = nx.spring_layout(
+                        H,
+                        pos=pos,
+                        fixed=fixed,
+                        k=k_relax,
+                        weight=None,
+                        seed=42,
+                        iterations=250,
+                    )
+                else:
+                    pos = nx.spring_layout(
+                        H,
+                        pos=pos,
+                        k=k_relax,
+                        weight=None,
+                        seed=42,
+                        iterations=250,
+                    )
+
+                pos = cast(dict[str, tuple[float, float]], pos)
+                return enforce_start_end(pos, start_node, end_node)
+
+            pos = layout_func(G)
+            pos = cast(dict[str, tuple[float, float]], pos)
+            return enforce_start_end(pos, start_node, end_node)
         except Exception:
-            return nx.spring_layout(G)
+            pos = cast(dict[str, tuple[float, float]], nx.spring_layout(G.to_undirected()))
+            return enforce_start_end(pos, start_node, end_node)
 
     def _create_traces_and_annotations(
         self,
@@ -111,7 +203,6 @@ class GraphVisualizer:
             )
             edge_traces.append(edge_trace)
 
-            # Arrow annotation
             target_radius = node_sizes[edge[1]] / 2 + 2
             dx = x1 - x0
             dy = y1 - y0
@@ -157,18 +248,13 @@ class GraphVisualizer:
             node_y.append(y)
             node_ids.append(node)  # Track node ID
 
-            # Build label
             if "label" in G.nodes[node]:
-                # Abstract graph
                 hover_text = f"<b>{G.nodes[node]['label']}</b><br>ID: {node}<br>Size: {G.nodes[node]['size']}"
-                label = G.nodes[node]["label"]
             else:
-                # Normal graph
                 hover_text = f"<b>{node}</b>"
                 if G.in_degree(node) > 0 or G.out_degree(node) > 0:
                     hover_text += f"<br>In-degree: {G.in_degree(node)}"
                     hover_text += f"<br>Out-degree: {G.out_degree(node)}"
-                label = str(node)
 
             node_text.append(hover_text)
 
@@ -238,7 +324,6 @@ class GraphVisualizer:
         )
 
         if decomposition:
-            # Add legend traces
             for i, sp in enumerate(decomposition.subprocesses):
                 if sp.parent_id is None:
                     fig.add_trace(
@@ -252,7 +337,6 @@ class GraphVisualizer:
                         )
                     )
 
-        # Add reset zoom button
         fig.update_layout(
             updatemenus=[
                 dict(
@@ -291,13 +375,11 @@ class GraphVisualizer:
             subprocess_colors: Optional mapping of subprocess_id -> color for consistency.
         """
 
-        # Compute layouts and traces for all steps
         all_traces = []
         all_annotations = []
 
-        steps = []
+        steps: list[dict[str, Any]] = []
 
-        # Keep track of trace indices per step
         step_trace_indices = []
         current_trace_idx = 0
 
@@ -307,14 +389,12 @@ class GraphVisualizer:
             else:
                 pos = self.compute_layout(G)
 
-            # Use provided subprocess_colors if available, else assign by index
             node_colors = {}
             if subprocess_colors:
                 for node in G.nodes():
                     if node in subprocess_colors:
                         node_colors[node] = subprocess_colors[node]
                     else:
-                        # Fallback for nodes not in mapping
                         node_colors[node] = "#888888"
             elif i > 0:  # Abstract levels without explicit colors
                 for j, node in enumerate(G.nodes()):
@@ -324,10 +404,8 @@ class GraphVisualizer:
                 G, pos, node_colors=node_colors, show_labels=True
             )
 
-            # Visibility: Only first graph visible initially
             visible = i == 0
 
-            # Calculate range of indices for this step
             num_traces = len(traces)
             step_indices = list(
                 range(current_trace_idx, current_trace_idx + num_traces)
@@ -335,14 +413,13 @@ class GraphVisualizer:
             step_trace_indices.append(step_indices)
             current_trace_idx += num_traces
 
-            # Set init visibility
             for trace in traces:
                 trace.visible = visible
                 all_traces.append(trace)
 
             all_annotations.append(annotations)
 
-            step = dict(
+            step: dict[str, Any] = dict(
                 method="update",
                 args=[
                     {
@@ -354,17 +431,16 @@ class GraphVisualizer:
             )
             steps.append(step)
 
-        # Fix visibility arrays in steps
         total_traces = len(all_traces)
         for i, step in enumerate(steps):
             visible_array = [False] * total_traces
             for idx in step_trace_indices[i]:
                 visible_array[idx] = True
-            step["args"][0]["visible"] = visible_array
+            args = cast(list[dict[str, Any]], step["args"])
+            args[0]["visible"] = visible_array
 
         fig = go.Figure(data=all_traces)
 
-        # Initial layout (Level 0)
         fig.update_layout(
             title=dict(text=titles[0], x=0.5),
             showlegend=False,
@@ -420,13 +496,8 @@ class GraphVisualizer:
 
         Click on a cluster node to see its internal structure in a separate view.
         """
-        # Build the main hierarchy figure
         fig = self.visualize_hierarchy(graphs, titles, precomputed_layouts, **kwargs)
 
-        # Add custom data for drill-down (subprocess info per node)
-        # This enables click events to identify which subprocess was clicked
-
-        # Update hover template to show drill-down hint for cluster nodes
         fig.update_traces(
             hovertemplate="<b>%{hovertext}</b><br><i>Click to drill down</i><extra></extra>",
             selector=dict(mode="markers+text"),
@@ -454,10 +525,8 @@ class GraphVisualizer:
         Returns:
             A Plotly figure showing the subprocess internals with external connections.
         """
-        # Extract subgraph
         subgraph: nx.DiGraph = original_graph.subgraph(subprocess.nodes).copy()
 
-        # Find external connections
         incoming_external: dict[
             str, list[str]
         ] = {}  # internal_node -> [external_sources]
@@ -466,24 +535,19 @@ class GraphVisualizer:
         ] = {}  # internal_node -> [external_targets]
 
         for node in subprocess.nodes:
-            # Find incoming edges from outside
             for predecessor in original_graph.predecessors(node):
                 if predecessor not in subprocess.nodes:
                     if node not in incoming_external:
                         incoming_external[node] = []
                     incoming_external[node].append(predecessor)
-
-            # Find outgoing edges to outside
             for successor in original_graph.successors(node):
                 if successor not in subprocess.nodes:
                     if node not in outgoing_external:
                         outgoing_external[node] = []
                     outgoing_external[node].append(successor)
 
-        # Compute layout for the internal subgraph first
         pos = self.compute_layout(subgraph)
 
-        # Calculate bounds for positioning ghost nodes
         if pos:
             x_vals = [p[0] for p in pos.values()]
             y_vals = [p[1] for p in pos.values()]
@@ -491,45 +555,46 @@ class GraphVisualizer:
             y_min, y_max = min(y_vals), max(y_vals)
             x_range = x_max - x_min if x_max > x_min else 1
             y_range = y_max - y_min if y_max > y_min else 1
-            margin = max(x_range, y_range) * 0.3
+            # In drilldown views we add ghost nodes left/right. If we base the horizontal
+            # margin on the (often larger) y-range, a mostly-vertical internal layout can
+            # get stretched horizontally and appear "empty". Keep horizontal padding tied
+            # to x-range only.
+            x_margin = max(x_range * 0.35, 0.6)
+            y_step = max(y_range * 0.08, 0.15)
         else:
             x_min, x_max, y_min, y_max = 0, 1, 0, 1
-            margin = 0.3
+            x_margin = 0.6
+            y_step = 0.15
 
-        # Position ghost nodes for incoming connections (on the left)
         ghost_positions: dict[str, tuple[float, float]] = {}
         incoming_ghosts = set()
         for internal_node, externals in incoming_external.items():
-            for ext in externals:
+            for i, ext in enumerate(externals):
                 ghost_id = f"⟵ {ext}"
                 incoming_ghosts.add(ghost_id)
                 if ghost_id not in ghost_positions:
-                    # Position to the left of the internal node
                     int_x, int_y = pos[internal_node]
-                    ghost_positions[ghost_id] = (x_min - margin, int_y)
+                    offset = (i - (len(externals) - 1) / 2) * y_step
+                    ghost_positions[ghost_id] = (x_min - x_margin, int_y + offset)
 
-        # Position ghost nodes for outgoing connections (on the right)
         outgoing_ghosts = set()
         for internal_node, externals in outgoing_external.items():
-            for ext in externals:
+            for i, ext in enumerate(externals):
                 ghost_id = f"{ext} ⟶"
                 outgoing_ghosts.add(ghost_id)
                 if ghost_id not in ghost_positions:
-                    # Position to the right of the internal node
                     int_x, int_y = pos[internal_node]
-                    ghost_positions[ghost_id] = (x_max + margin, int_y)
+                    offset = (i - (len(externals) - 1) / 2) * y_step
+                    ghost_positions[ghost_id] = (x_max + x_margin, int_y + offset)
 
-        # Color internal nodes
         node_colors = {}
         if color:
             node_colors = {node: color for node in subgraph.nodes()}
 
-        # Create traces for internal graph
         traces, annotations = self._create_traces_and_annotations(
             subgraph, pos, node_colors=node_colors, show_labels=True
         )
 
-        # Add ghost nodes trace
         if ghost_positions:
             ghost_x = []
             ghost_y = []
@@ -571,11 +636,9 @@ class GraphVisualizer:
             )
             traces.append(ghost_trace)
 
-        # Add dotted edges for external connections
         external_edge_traces = []
         external_annotations = []
 
-        # Incoming external edges (dotted)
         for internal_node, externals in incoming_external.items():
             int_x, int_y = pos[internal_node]
             for ext in externals:
@@ -592,8 +655,6 @@ class GraphVisualizer:
                         showlegend=False,
                     )
                 )
-
-                # Arrow annotation
                 external_annotations.append(
                     dict(
                         ax=gx,
@@ -613,7 +674,6 @@ class GraphVisualizer:
                     )
                 )
 
-        # Outgoing external edges (dotted)
         for internal_node, externals in outgoing_external.items():
             int_x, int_y = pos[internal_node]
             for ext in externals:
@@ -630,8 +690,6 @@ class GraphVisualizer:
                         showlegend=False,
                     )
                 )
-
-                # Arrow annotation
                 external_annotations.append(
                     dict(
                         ax=int_x,
@@ -651,13 +709,11 @@ class GraphVisualizer:
                     )
                 )
 
-        # Combine all traces
         all_traces = external_edge_traces + traces
         all_annotations = annotations + external_annotations
 
         fig = go.Figure(data=all_traces)
 
-        # Count external connections for title
         total_incoming = sum(len(v) for v in incoming_external.values())
         total_outgoing = sum(len(v) for v in outgoing_external.values())
         ext_info = ""

@@ -36,7 +36,7 @@ class DecompositionConfig:
     secondary_type: Optional[StrategyType] = None
 
     # Embedding specific
-    model_name: str = "all-MiniLM-L6-v2"
+    model_name: str = "all-mpnet-base-v2"
     optimal_size: tuple[int, int] = (6, 8)
     similarity_threshold: float = 0.3
     use_graph_distance: bool = True

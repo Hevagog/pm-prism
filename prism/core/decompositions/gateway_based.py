@@ -1,7 +1,7 @@
 import networkx as nx
 import uuid
 
-from prism.core import DecompositionStrategy, Subprocess
+from prism.core.base import DecompositionStrategy, Subprocess
 
 
 class GatewayBasedStrategy(DecompositionStrategy):

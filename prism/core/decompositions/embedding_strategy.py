@@ -7,12 +7,20 @@ from dataclasses import dataclass, field
 import numpy as np
 import networkx as nx
 
-from prism.core import DecompositionStrategy, Subprocess, SubprocessLabeler
+from sentence_transformers import SentenceTransformer
+
+from prism.core.base import (
+    DecompositionStrategy,
+    Subprocess,
+    SubprocessLabeler,
+    is_boundary_node,
+)
+from prism.core.labeler import LLMLabeler
 
 
 def _generate_cluster_id() -> int:
     """Generate a unique cluster ID."""
-    return hash(uuid.uuid4())
+    return int(uuid.uuid4().hex, 16)
 
 
 @dataclass
@@ -35,8 +43,6 @@ class EmbeddingProvider:
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         """Initialize with a sentence-transformers model."""
-        from sentence_transformers import SentenceTransformer
-
         self.model = SentenceTransformer(model_name)
 
     def embed(self, texts: list[str]) -> np.ndarray:
@@ -50,7 +56,6 @@ class EmbeddingProvider:
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Compute cosine similarity between two vectors."""
-    # Vectors are already normalized, so dot product = cosine similarity
     return float(np.dot(a, b))
 
 
@@ -64,10 +69,8 @@ def cluster_size_quality(size: int, optimal_range: tuple[int, int] = (6, 8)) -> 
     if lo <= size <= hi:
         return 1.0
     elif size < lo:
-        # Linear penalty for small clusters
         return size / lo
     else:
-        # Inverse penalty for large clusters
         return hi / size
 
 
@@ -117,7 +120,11 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
 
     def _compute_embeddings(self, graph: nx.DiGraph) -> dict[str, np.ndarray]:
         """Compute embeddings for all nodes in the graph."""
-        nodes = list(graph.nodes())
+        nodes = sorted(
+            node_id
+            for node_id, node_data in graph.nodes(data=True)
+            if not is_boundary_node(str(node_id), node_data)
+        )
         embedder = self._get_embedder()
         embeddings_array = embedder.embed(nodes)
         return {node: embeddings_array[i] for i, node in enumerate(nodes)}
@@ -147,40 +154,35 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         Compute similarity between two clusters.
         Combines cosine similarity of embeddings with graph proximity.
         """
-        # Cosine similarity of aggregated embeddings
         cos_sim = cosine_similarity(cluster_a.embedding, cluster_b.embedding)
 
         if not self.use_graph_distance or graph_distances is None:
             return cos_sim
 
-        # Average graph distance between nodes in the two clusters
-        total_dist = 0
-        count = 0
-        for node_a in cluster_a.nodes:
-            for node_b in cluster_b.nodes:
-                key = (min(node_a, node_b), max(node_a, node_b))
-                if key in graph_distances:
-                    total_dist += graph_distances[key]
-                    count += 1
+        total_distance = 0.0
+        pair_count = 0
 
-        if count == 0:
-            # No path exists - treat as maximum distance
-            graph_sim = 0.0
+        worst_distance = max(max_graph_dist, 1)
+        for left_node in cluster_a.nodes:
+            for right_node in cluster_b.nodes:
+                key = (min(left_node, right_node), max(left_node, right_node))
+                total_distance += float(graph_distances.get(key, worst_distance))
+                pair_count += 1
+
+        if pair_count == 0:
+            graph_similarity = 0.0
         else:
-            avg_dist = total_dist / count
-            # Convert distance to similarity (closer = higher)
-            graph_sim = 1.0 - (avg_dist / max_graph_dist) if max_graph_dist > 0 else 1.0
+            average_distance = total_distance / pair_count
+            graph_similarity = 1.0 - (average_distance / worst_distance)
 
-        # Weighted combination
-        alpha = 1.0 - self.graph_distance_weight
-        beta = self.graph_distance_weight
-        return alpha * cos_sim + beta * graph_sim
+        semantic_weight = 1.0 - self.graph_distance_weight
+        structural_weight = self.graph_distance_weight
+        return semantic_weight * cos_sim + structural_weight * graph_similarity
 
     def _aggregate_embeddings(self, clusters: list[Cluster]) -> np.ndarray:
         """Aggregate embeddings by averaging (normalized)."""
         stacked = np.vstack([c.embedding for c in clusters])
         mean_emb = np.mean(stacked, axis=0)
-        # Normalize
         norm = np.linalg.norm(mean_emb)
         if norm > 0:
             mean_emb = mean_emb / norm
@@ -191,21 +193,30 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         Decide whether merging improves overall quality.
         Compares average quality before vs quality after merge.
         """
-        quality_before = sum(cluster_size_quality(s, self.optimal_size) for s in size_before)
-        quality_before /= len(size_before)
+        quality_sum_before = 0.0
+        for cluster_size in size_before:
+            quality_sum_before += cluster_size_quality(cluster_size, self.optimal_size)
+        quality_before = quality_sum_before / len(size_before)
 
         quality_after = cluster_size_quality(size_after, self.optimal_size)
 
-        # Merge if quality improves or stays similar
         return quality_after >= quality_before - 0.05
 
     def _are_neighbors(
         self, cluster_a: Cluster, cluster_b: Cluster, graph: nx.DiGraph
     ) -> bool:
-        """Check if two clusters have any edge between them."""
-        for node_a in cluster_a.nodes:
-            for node_b in cluster_b.nodes:
-                if graph.has_edge(node_a, node_b) or graph.has_edge(node_b, node_a):
+        """Check if two clusters have any edge between them.
+
+        This is implemented by scanning adjacency lists rather than checking all
+        node-pairs (which is much slower).
+        """
+        other_nodes = cluster_b.nodes
+        for candidate_node in cluster_a.nodes:
+            for successor in graph.successors(candidate_node):
+                if successor in other_nodes:
+                    return True
+            for predecessor in graph.predecessors(candidate_node):
+                if predecessor in other_nodes:
                     return True
         return False
 
@@ -215,7 +226,7 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         initial_clusters: list[Cluster],
         graph_distances: dict[tuple[str, str], int] | None,
         record_history: bool = False,
-    ) -> tuple[list[Cluster], list[list[Cluster]]]:
+    ) -> tuple[list[Cluster], list[list[Cluster]], list[Cluster]]:
         """
         Run one round of agglomerative clustering.
 
@@ -228,93 +239,93 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         Returns:
             Tuple of (final clusters, history of states after each merge).
         """
-        # Build cluster dict
-        clusters: dict[int, Cluster] = {c.id: c for c in initial_clusters}
+        clusters: dict[int, Cluster] = {
+            cluster.id: cluster for cluster in initial_clusters
+        }
 
-        # Compute max graph distance for normalization
         max_graph_dist = max(graph_distances.values()) if graph_distances else 1
 
-        # Priority queue: (-similarity, cluster_id_a, cluster_id_b)
-        pq: list[tuple[float, int, int]] = []
+        priority_queue: list[tuple[float, str, str, int, int]] = []
 
-        def add_merge_candidates(cluster: Cluster):
+        def _cluster_tie_breaker_key(cluster: Cluster) -> str:
+            return min(cluster.nodes) if cluster.nodes else ""
+
+        def add_merge_candidates(base_cluster: Cluster) -> None:
             """Add potential merges for a cluster with its neighbors."""
-            for other in clusters.values():
-                if other.id == cluster.id:
+            base_key = _cluster_tie_breaker_key(base_cluster)
+            for other_cluster in clusters.values():
+                if other_cluster.id == base_cluster.id:
                     continue
-                # Only consider neighbors in the graph
-                if not self._are_neighbors(cluster, other, graph):
+                if not self._are_neighbors(base_cluster, other_cluster, graph):
                     continue
 
                 sim = self._hybrid_similarity(
-                    cluster, other, graph_distances, max_graph_dist
+                    base_cluster, other_cluster, graph_distances, max_graph_dist
                 )
                 if sim >= self.similarity_threshold:
-                    heapq.heappush(pq, (-sim, cluster.id, other.id))
+                    other_key = _cluster_tie_breaker_key(other_cluster)
+                    heapq.heappush(
+                        priority_queue,
+                        (-sim, base_key, other_key, base_cluster.id, other_cluster.id),
+                    )
 
-        # Initialize merge candidates
-        for cluster in list(clusters.values()):
-            add_merge_candidates(cluster)
+        for starting_cluster in list(clusters.values()):
+            add_merge_candidates(starting_cluster)
 
         history: list[list[Cluster]] = []
+        merge_sequence: list[Cluster] = []
 
-        # Main clustering loop
-        while pq:
-            neg_sim, id_a, id_b = heapq.heappop(pq)
+        while priority_queue:
+            neg_similarity, _, _, left_cluster_id, right_cluster_id = heapq.heappop(
+                priority_queue
+            )
 
-            # Check if clusters still exist (might have been merged)
-            if id_a not in clusters or id_b not in clusters:
+            if left_cluster_id not in clusters or right_cluster_id not in clusters:
                 continue
 
-            cluster_a = clusters[id_a]
-            cluster_b = clusters[id_b]
+            left_cluster = clusters[left_cluster_id]
+            right_cluster = clusters[right_cluster_id]
 
-            # Check if merge improves quality
-            merged_size = len(cluster_a.nodes) + len(cluster_b.nodes)
-            sizes_before = [len(cluster_a.nodes), len(cluster_b.nodes)]
+            merged_size = len(left_cluster.nodes) + len(right_cluster.nodes)
+            sizes_before = [len(left_cluster.nodes), len(right_cluster.nodes)]
 
             if not self._should_merge(sizes_before, merged_size):
                 continue
 
-            # Perform merge
-            new_nodes = cluster_a.nodes | cluster_b.nodes
-            new_embedding = self._aggregate_embeddings([cluster_a, cluster_b])
-            new_cluster = Cluster(nodes=new_nodes, embedding=new_embedding)
+            merged_nodes = left_cluster.nodes | right_cluster.nodes
+            merged_embedding = self._aggregate_embeddings([left_cluster, right_cluster])
+            merged_cluster = Cluster(nodes=merged_nodes, embedding=merged_embedding)
 
-            # Remove old clusters
-            del clusters[id_a]
-            del clusters[id_b]
+            del clusters[left_cluster_id]
+            del clusters[right_cluster_id]
 
-            # Add new cluster
-            clusters[new_cluster.id] = new_cluster
+            clusters[merged_cluster.id] = merged_cluster
 
-            # Add new merge candidates
-            add_merge_candidates(new_cluster)
+            add_merge_candidates(merged_cluster)
 
-            # Record state after this merge
             if record_history:
                 history.append(list(clusters.values()))
+                merge_sequence.append(merged_cluster)
 
-        return list(clusters.values()), history
+        return list(clusters.values()), history, merge_sequence
 
     def _clusters_to_subprocesses(
         self, graph: nx.DiGraph, clusters: list[Cluster], context: dict | None = None
     ) -> list[Subprocess]:
         """Convert clusters to Subprocess objects."""
-        subprocesses = []
+        subprocesses: list[Subprocess] = []
 
         for i, cluster in enumerate(clusters):
-            # Collect internal edges
             edges = set()
             for u, v in graph.edges():
                 if u in cluster.nodes and v in cluster.nodes:
                     edges.add((u, v))
 
-            # Name: use single node name if singleton, otherwise placeholder
             if len(cluster.nodes) == 1:
-                name = str(list(cluster.nodes)[0])
+                node_id = next(iter(cluster.nodes))
+                name = str(graph.nodes[node_id].get("label", node_id))
             else:
-                name = f"Cluster_{i + 1}"  # Will be replaced by labeler if available
+                name = f"Group ({len(cluster.nodes)} activities)"
 
             subprocess = Subprocess(
                 id=f"sp_{uuid.uuid4().hex[:8]}",
@@ -329,11 +340,19 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
             )
             subprocesses.append(subprocess)
 
-        # Apply labeler if available (for multi-node clusters)
-        if self.labeler:
-            for sp in subprocesses:
-                if len(sp.nodes) > 1:
-                    sp.name = self.labeler.label(sp, context)
+        labeler = self.labeler
+        if labeler is None:
+            labeler = LLMLabeler()
+
+        if isinstance(labeler, LLMLabeler):
+            labels = labeler.label_batch(subprocesses, context)
+            for subprocess in subprocesses:
+                if len(subprocess.nodes) > 1:
+                    subprocess.name = labels[subprocess.id]
+        else:
+            for subprocess in subprocesses:
+                if len(subprocess.nodes) > 1:
+                    subprocess.name = labeler.label(subprocess, context)
 
         return subprocesses
 
@@ -342,29 +361,45 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         if graph.number_of_nodes() == 0:
             return []
 
-        # Compute embeddings
+        boundary_nodes = {
+            node_id
+            for node_id, node_data in graph.nodes(data=True)
+            if is_boundary_node(str(node_id), node_data)
+        }
+
         node_embeddings = self._compute_embeddings(graph)
 
-        # Compute graph distances if needed
         graph_distances = None
         if self.use_graph_distance:
             graph_distances = self._compute_graph_distances(graph)
 
-        # Initialize singleton clusters
         initial_clusters = [
             Cluster(nodes={node}, embedding=emb)
             for node, emb in node_embeddings.items()
         ]
 
-        # Run clustering
-        final_clusters, _ = self._run_clustering(
+        final_clusters, _, _ = self._run_clustering(
             graph, initial_clusters, graph_distances, record_history=False
         )
 
-        # Get labeling context from kwargs
         labeling_context = kwargs.get("labeling_context")
 
-        return self._clusters_to_subprocesses(graph, final_clusters, labeling_context)
+        subprocesses = self._clusters_to_subprocesses(graph, final_clusters, labeling_context)
+
+        for node_id in sorted(boundary_nodes):
+            if node_id not in graph:
+                continue
+            subprocesses.append(
+                Subprocess(
+                    id=f"sp_{uuid.uuid4().hex[:8]}",
+                    name=str(graph.nodes[node_id].get("label", node_id)),
+                    nodes={node_id},
+                    edges=set(),
+                    metadata={"detection_method": "boundary", "is_boundary": True},
+                )
+            )
+
+        return subprocesses
 
     def decompose_hierarchical(
         self, graph: nx.DiGraph, max_levels: int = 10, **kwargs
@@ -386,55 +421,108 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         if graph.number_of_nodes() == 0:
             return []
 
-        # Compute embeddings once
+        boundary_nodes = {
+            node_id
+            for node_id, node_data in graph.nodes(data=True)
+            if is_boundary_node(str(node_id), node_data)
+        }
+
         node_embeddings = self._compute_embeddings(graph)
 
-        # Compute graph distances once
         graph_distances = None
         if self.use_graph_distance:
             graph_distances = self._compute_graph_distances(graph)
 
-        # Initial singleton clusters
         initial_clusters = [
             Cluster(nodes={node}, embedding=emb)
             for node, emb in node_embeddings.items()
         ]
 
-        # Run clustering to get final clusters
-        final_clusters, _ = self._run_clustering(
-            graph, initial_clusters, graph_distances, record_history=False
+        final_clusters, _, merge_sequence = self._run_clustering(
+            graph, initial_clusters, graph_distances, record_history=True
         )
 
-        # Separate: multi-node clusters vs singletons that didn't merge
-        formed_clusters = [c for c in final_clusters if len(c.nodes) > 1]
+        final_multi_node_clusters = [
+            cluster for cluster in final_clusters if len(cluster.nodes) > 1
+        ]
 
-        # Build hierarchy: show clusters forming one at a time
+        formation_step_by_nodeset: dict[frozenset[str], int] = {}
+        for step_index, merged_cluster in enumerate(merge_sequence):
+            key = frozenset(merged_cluster.nodes)
+            formation_step_by_nodeset.setdefault(key, step_index)
+
+        final_multi_node_clusters.sort(
+            key=lambda cluster: formation_step_by_nodeset.get(
+                frozenset(cluster.nodes), 10**9
+            )
+        )
+
         hierarchy: list[list[Subprocess]] = []
 
-        # Get labeling context from kwargs
         labeling_context = kwargs.get("labeling_context")
 
-        # Level 0: all singletons
-        hierarchy.append(self._clusters_to_subprocesses(graph, initial_clusters, labeling_context))
+        hierarchy.append(
+            self._clusters_to_subprocesses(graph, initial_clusters, labeling_context)
+        )
 
-        # For each formed cluster, create a level showing it formed
-        # while others remain as singletons
-        nodes_in_formed = set()
-        for i, cluster in enumerate(formed_clusters):
-            nodes_in_formed.update(cluster.nodes)
+        if boundary_nodes:
+            boundary_subprocesses = [
+                Subprocess(
+                    id=f"sp_{uuid.uuid4().hex[:8]}",
+                    name=str(graph.nodes[node_id].get("label", node_id)),
+                    nodes={node_id},
+                    edges=set(),
+                    metadata={"detection_method": "boundary", "is_boundary": True},
+                )
+                for node_id in sorted(boundary_nodes)
+                if node_id in graph
+            ]
+            hierarchy[0].extend(boundary_subprocesses)
 
-            # Current state: formed clusters so far + remaining singletons
-            current_state: list[Cluster] = []
+        if max_levels <= 1:
+            return hierarchy
 
-            # Add all clusters formed so far
-            current_state.extend(formed_clusters[: i + 1])
+        max_clusters_to_reveal = max_levels - 1
 
-            # Add singletons for nodes not yet in any formed cluster
-            for node, emb in node_embeddings.items():
-                if node not in nodes_in_formed:
-                    current_state.append(Cluster(nodes={node}, embedding=emb))
+        revealed_nodes: set[str] = set()
+        for cluster_index, final_cluster in enumerate(final_multi_node_clusters):
+            if cluster_index >= max_clusters_to_reveal:
+                break
 
-            hierarchy.append(self._clusters_to_subprocesses(graph, current_state, labeling_context))
+            revealed_nodes.update(final_cluster.nodes)
+
+            current_clusters: list[Cluster] = []
+            current_clusters.extend(final_multi_node_clusters[: cluster_index + 1])
+
+            for node_name, node_embedding in node_embeddings.items():
+                if node_name not in revealed_nodes:
+                    current_clusters.append(
+                        Cluster(nodes={node_name}, embedding=node_embedding)
+                    )
+
+            hierarchy.append(
+                self._clusters_to_subprocesses(
+                    graph, current_clusters, labeling_context
+                )
+            )
+
+            if boundary_nodes:
+                hierarchy[-1].extend(
+                    [
+                        Subprocess(
+                            id=f"sp_{uuid.uuid4().hex[:8]}",
+                            name=str(graph.nodes[node_id].get("label", node_id)),
+                            nodes={node_id},
+                            edges=set(),
+                            metadata={
+                                "detection_method": "boundary",
+                                "is_boundary": True,
+                            },
+                        )
+                        for node_id in sorted(boundary_nodes)
+                        if node_id in graph
+                    ]
+                )
 
         return hierarchy
 
@@ -453,8 +541,7 @@ class EmbeddingClusteringStrategy(DecompositionStrategy):
         Returns:
             A subgraph containing only the nodes and edges within the subprocess.
         """
-        subgraph: nx.DiGraph = graph.subgraph(subprocess.nodes).copy()  # type: ignore
-        return subgraph
+        return nx.DiGraph(graph.subgraph(subprocess.nodes).copy())
 
     def get_strategy_name(self) -> str:
         return "Embedding Clustering (Agglomerative)"

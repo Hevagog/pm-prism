@@ -12,10 +12,10 @@ from prism.core.labeler import LLMLabeler, SimpleLabeler
 
 def embedding_strategy(
     *,
-    use_llm_labeler: bool = False,
+    use_llm_labeler: bool = True,
     optimal_size: tuple[int, int] = (6, 8),
     similarity_threshold: float = 0.3,
-    model_name: str = "all-MiniLM-L6-v2",
+    model_name: str = "all-mpnet-base-v2",
 ) -> EmbeddingClusteringStrategy:
     """
     Create an embedding-based clustering strategy.
@@ -48,7 +48,7 @@ def embedding_strategy(
 
 def community_strategy(
     *,
-    use_llm_labeler: bool = False,
+    use_llm_labeler: bool = True,
     resolution: float = 1.0,
 ) -> CommunityDetectionStrategy:
     """

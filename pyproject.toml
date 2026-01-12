@@ -15,4 +15,30 @@ dependencies = [
     "numpy>=1.24",
     "groq>=0.4",
     "python-dotenv>=1.0",
+    "tenacity>=9.0",
+    "ruff>=0.14.11",
+    "mypy>=1.19.1",
 ]
+
+[tool.mypy]
+python_version = "3.12"
+pretty = true
+show_error_codes = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "dash",
+    "dash.*",
+    "groq",
+    "groq.*",
+    "networkx",
+    "networkx.*",
+    "plotly",
+    "plotly.*",
+    "pm4py",
+    "pm4py.*",
+    "sentence_transformers",
+    "sentence_transformers.*",
+]
+ignore_missing_imports = true

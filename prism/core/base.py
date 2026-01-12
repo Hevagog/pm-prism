@@ -4,6 +4,17 @@ from typing import Any
 import networkx as nx
 
 
+START_EVENT_ID = "__START__"
+END_EVENT_ID = "__END__"
+BOUNDARY_EVENT_IDS = {START_EVENT_ID, END_EVENT_ID}
+
+
+def is_boundary_node(node_id: str, node_data: dict[str, Any] | None = None) -> bool:
+    if node_data and bool(node_data.get("is_boundary")):
+        return True
+    return node_id in BOUNDARY_EVENT_IDS
+
+
 @dataclass
 class Subprocess:
     """Represents a component identified in a process model."""

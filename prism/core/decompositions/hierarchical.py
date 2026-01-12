@@ -1,6 +1,6 @@
 import networkx as nx
 
-from prism.core.base import DecompositionStrategy, Subprocess
+from prism.core import DecompositionStrategy, Subprocess
 from prism.core.decompositions.louvain import CommunityDetectionStrategy
 
 

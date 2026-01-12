@@ -1,4 +1,3 @@
-from __future__ import annotations
 from typing import Any
 from pathlib import Path
 import networkx as nx
@@ -96,7 +95,8 @@ class DFGAdapter(ProcessModelAdapter):
             end_activities = {
                 node: 1
                 for node in G.nodes()
-                if G.out_degree(node) == 0 and node not in (START_EVENT_ID, END_EVENT_ID)
+                if G.out_degree(node) == 0
+                and node not in (START_EVENT_ID, END_EVENT_ID)
             }
 
         if start_activities:

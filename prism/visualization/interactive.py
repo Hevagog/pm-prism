@@ -1,5 +1,3 @@
-"""Interactive Dash application for process decomposition visualization."""
-
 from __future__ import annotations
 from typing import TYPE_CHECKING
 

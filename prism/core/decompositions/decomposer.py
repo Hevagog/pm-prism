@@ -14,7 +14,7 @@ from prism.core.base import (
     END_EVENT_ID,
 )
 from prism.core.config import DecompositionConfig
-from prism.core.decompositions.factory import DecompositionStrategyFactory
+from prism.core.decompositions import DecompositionStrategyFactory
 from prism.adapters import DFGAdapter
 from prism.visualization import GraphVisualizer
 from prism.visualization.graph_viz import get_subprocess_color
@@ -178,7 +178,9 @@ class ProcessDecomposer:
                 continue
 
             remaining_edges = {
-                (u, v) for (u, v) in sp.edges if u in remaining_nodes and v in remaining_nodes
+                (u, v)
+                for (u, v) in sp.edges
+                if u in remaining_nodes and v in remaining_nodes
             }
 
             cleaned.append(
@@ -195,7 +197,7 @@ class ProcessDecomposer:
 
         existing_boundary_nodes = set()
         for sp in cleaned:
-            existing_boundary_nodes |= (sp.nodes & set(boundary_nodes))
+            existing_boundary_nodes |= sp.nodes & set(boundary_nodes)
 
         for node_id in boundary_nodes:
             if node_id in existing_boundary_nodes:

@@ -18,8 +18,7 @@ def _normalize_label(label: str | None, fallback: str) -> str:
     return cleaned
 
 
-class LabelingError(RuntimeError):
-    pass
+class LabelingError(RuntimeError): ...
 
 
 class LLMLabeler(SubprocessLabeler):
@@ -75,7 +74,24 @@ class LLMLabeler(SubprocessLabeler):
             return False
         if len(cleaned.split()) < 2 or len(cleaned.split()) > 4:
             return False
-        if any(ch in cleaned for ch in ["\n", "\r", "\t", ":", ";", "\"", "'", "(", ")", "[", "]", "{", "}"]):
+        if any(
+            ch in cleaned
+            for ch in [
+                "\n",
+                "\r",
+                "\t",
+                ":",
+                ";",
+                '"',
+                "'",
+                "(",
+                ")",
+                "[",
+                "]",
+                "{",
+                "}",
+            ]
+        ):
             return False
         lowered = cleaned.lower()
         banned = ["process", "workflow", "activities", "activity", "cluster", "group"]
@@ -171,16 +187,16 @@ class LLMLabeler(SubprocessLabeler):
 
         for attempt in self._retrying():
             with attempt:
-                raw = self._call_llm(system_prompt, user_prompt, max_completion_tokens=200)
+                raw = self._call_llm(
+                    system_prompt, user_prompt, max_completion_tokens=200
+                )
                 cleaned = _normalize_label(raw, fallback="")
                 if not self._is_valid_label(cleaned):
                     preview = raw.replace("\n", " ").replace("\r", " ")
                     preview = " ".join(preview.split())
                     if len(preview) > 200:
                         preview = preview[:200] + "..."
-                    raise LabelingError(
-                        f"Invalid label: {cleaned!r} (raw={preview!r})"
-                    )
+                    raise LabelingError(f"Invalid label: {cleaned!r} (raw={preview!r})")
                 return cleaned
 
         raise LabelingError("Labeling failed")

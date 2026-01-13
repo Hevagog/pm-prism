@@ -13,7 +13,7 @@ logger = logging.Logger(__name__)
 def demo_basic_decomposition():
     """Demo using convenience factory functions."""
     sample_dir = download_sample_logs(SAMPLE_URL)
-    csv_path = sample_dir / "logExample.csv" # "purchasingExample.csv"
+    csv_path = sample_dir / "purchasingExample.csv"
 
     if not csv_path.exists():
         logger.error(f"Sample file not found: {csv_path}")
@@ -21,7 +21,7 @@ def demo_basic_decomposition():
 
     config = DecompositionConfig(
         strategy_type=StrategyType.EMBEDDING,
-        optimal_size=(5, 8),
+        optimal_size=(5, 7),
         similarity_threshold=0.3,
     )
     decomposer = ProcessDecomposer(config)

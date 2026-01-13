@@ -1,0 +1,13 @@
+{
+  "158f1cbd363911c3fe9189dd125f8b8c85bceb64246c699325b3c901f24bbe28": "Generate Quotation Map",
+  "705b1d60dd978fe88784c5bade36e0b1f2f5ef134de67d8d36fc0fc5a4cc5740": "Manage Purchase Requisition",
+  "47f02876250a71c94a7e734a82a00c31a862ae91461a875740bb7d393e3bd5ca": "Request for Quotation",
+  "a9aa0562c6409aaedbce33033d2d1591ad04f1fb7f3ae3d0c7506ac2edaf09d1": "Finalize Purchase Order",
+  "41e2a3b208e47fe85b0a0f6307e6422044a0d8cfed10d96b5e1665d276f2381c": "Settle Supplier Invoice",
+  "2fed63a3b82bd787e4bbbafde74c47506c0d9a48c9ff22b791355a64a09af8bc": "Execute Purchase Order",
+  "acc8088597be90dd880333c5b84ebc2fb17f6355046210867a223a94f819eaca": "Manage Purchase Requests",
+  "c17962f719f29bc86b67ac3a39d17c540bfc1996ed980ebb0783393421b8202d": "Execute Procurement Transactions",
+  "6f5578273f17f52c50215c43950a7f27059c6d78a0b2685509de6570b865cd28": "Manage Customer Interactions",
+  "7a49ff4d6b75d79c7dcc559639e9eecd0d906e94d1b527c9250973986816cd8c": "Execute Repair Tasks",
+  "51f6d0a6c75c384734390df387bb377fb80a417ac99381f47224db140418b02f": "Initiate Emergency Care"
+}

@@ -1,4 +1,7 @@
 import os
+import json
+import hashlib
+from pathlib import Path
 from collections import Counter
 
 from dotenv import load_dotenv
@@ -18,6 +21,16 @@ def _normalize_label(label: str | None, fallback: str) -> str:
     return cleaned
 
 
+def _strip_banned_prefix(label: str, banned: list[str]) -> str:
+    tokens = [t for t in label.split(" ") if t]
+    if len(tokens) < 2:
+        return label
+    first = tokens[0].lower()
+    if first in {b.lower() for b in banned}:
+        return " ".join(tokens[1:]).strip()
+    return label
+
+
 class LabelingError(RuntimeError): ...
 
 
@@ -28,6 +41,7 @@ class LLMLabeler(SubprocessLabeler):
         self,
         model: str = "openai/gpt-oss-120b",
         api_key: str | None = None,
+        cache_path: str | None = ".prism_label_cache.json",
         max_attempts: int = 6,
         delay_seconds: float = 2.0,
     ):
@@ -42,9 +56,44 @@ class LLMLabeler(SubprocessLabeler):
         """
         self.model = model
         self.api_key = api_key
+        self.cache_path = cache_path
         self.max_attempts = max_attempts
         self.delay_seconds = delay_seconds
         self._client = None
+
+    def _cache_key(self, nodes: set[str], context: dict | None) -> str:
+        domain = ""
+        if context and context.get("domain"):
+            domain = str(context.get("domain"))
+        signature = "\n".join(sorted(nodes))
+        raw = f"model={self.model}\ndomain={domain}\nsignature=\n{signature}\n"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _load_cache(self) -> dict[str, str]:
+        if not self.cache_path:
+            return {}
+        path = Path(self.cache_path)
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except Exception:
+            return {}
+        return {}
+
+    def _save_cache(self, cache: dict[str, str]) -> None:
+        if not self.cache_path:
+            return
+        path = Path(self.cache_path)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception:
+            return
 
     def _get_client(self):
         """Lazy initialization of Groq client."""
@@ -98,6 +147,12 @@ class LLMLabeler(SubprocessLabeler):
         if any(word in lowered.split() for word in banned):
             return False
         return True
+
+    def _postprocess_label(self, label: str) -> str:
+        banned = ["process", "workflow", "activities", "activity", "cluster", "group"]
+        cleaned = " ".join(label.strip().split())
+        cleaned = _strip_banned_prefix(cleaned, banned)
+        return " ".join(cleaned.split())
 
     def _call_llm(
         self, system_prompt: str, user_prompt: str, max_completion_tokens: int
@@ -175,6 +230,7 @@ class LLMLabeler(SubprocessLabeler):
             "- Purchasing\n"
             "- Process Activities\n"
             "- Invoice Processing\n"
+            "- Supplier Transactions\n"
             "- Cluster 1\n\n"
             "Rules:\n"
             "- Output exactly ONE line.\n"
@@ -191,6 +247,7 @@ class LLMLabeler(SubprocessLabeler):
                     system_prompt, user_prompt, max_completion_tokens=200
                 )
                 cleaned = _normalize_label(raw, fallback="")
+                cleaned = self._postprocess_label(cleaned)
                 if not self._is_valid_label(cleaned):
                     preview = raw.replace("\n", " ").replace("\r", " ")
                     preview = " ".join(preview.split())
@@ -214,10 +271,25 @@ class LLMLabeler(SubprocessLabeler):
         Returns:
             Dict mapping subprocess ID to generated label.
         """
-        to_label = [sp for sp in subprocesses if len(sp.nodes) > 1]
+        cache = self._load_cache()
+
+        labels: dict[str, str] = {}
+        to_label: list[Subprocess] = []
+        for sp in subprocesses:
+            if len(sp.nodes) <= 1:
+                continue
+            key = self._cache_key(set(sp.nodes), context)
+            cached = cache.get(key)
+            if cached and self._is_valid_label(cached):
+                labels[sp.id] = cached
+            else:
+                to_label.append(sp)
 
         if not to_label:
-            return {sp.id: list(sp.nodes)[0] for sp in subprocesses}
+            for sp in subprocesses:
+                if len(sp.nodes) == 1:
+                    labels[sp.id] = list(sp.nodes)[0]
+            return labels
 
         groups_desc = []
         for i, sp in enumerate(to_label):
@@ -251,7 +323,7 @@ class LLMLabeler(SubprocessLabeler):
             "- Start with a verb.\n"
             "- No quotes. No punctuation. No numbering.\n"
             "- Forbidden words: Process, Workflow, Activities, Activity, Cluster, Group.\n"
-            "- Bad example (do NOT output): Workflow for RFQ and Quotations\n"
+            "- Bad example (do NOT output): Workflow for RFQ and Quotations\nSupplier Transactions\nInvoice Processing\n"
             "- Output ONLY the labels."
         )
 
@@ -266,13 +338,13 @@ class LLMLabeler(SubprocessLabeler):
                         f"Batch labeling returned {len(lines)} lines for {len(to_label)} groups"
                     )
 
-                labels: dict[str, str] = {}
                 for i, sp in enumerate(to_label):
                     parsed = lines[i].strip().strip("\"'")
                     if ":" in parsed and parsed.lower().startswith("group"):
                         parsed = parsed.split(":", 1)[1].strip().strip("\"'")
 
                     cleaned = _normalize_label(parsed, fallback="")
+                    cleaned = self._postprocess_label(cleaned)
                     if not self._is_valid_label(cleaned):
                         preview = parsed.replace("\n", " ").replace("\r", " ")
                         preview = " ".join(preview.split())
@@ -282,11 +354,13 @@ class LLMLabeler(SubprocessLabeler):
                             f"Invalid batch label for {sp.id}: {cleaned!r} (raw={preview!r})"
                         )
                     labels[sp.id] = cleaned
+                    cache[self._cache_key(set(sp.nodes), context)] = cleaned
 
                 for sp in subprocesses:
                     if len(sp.nodes) == 1:
                         labels[sp.id] = list(sp.nodes)[0]
 
+                self._save_cache(cache)
                 return labels
 
         raise LabelingError("Batch labeling failed")

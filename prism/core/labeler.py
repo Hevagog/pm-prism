@@ -230,6 +230,7 @@ class LLMLabeler(SubprocessLabeler):
             "- Purchasing\n"
             "- Process Activities\n"
             "- Invoice Processing\n"
+            "- Supplier Transactions\n"
             "- Cluster 1\n\n"
             "Rules:\n"
             "- Output exactly ONE line.\n"
@@ -322,7 +323,7 @@ class LLMLabeler(SubprocessLabeler):
             "- Start with a verb.\n"
             "- No quotes. No punctuation. No numbering.\n"
             "- Forbidden words: Process, Workflow, Activities, Activity, Cluster, Group.\n"
-            "- Bad example (do NOT output): Workflow for RFQ and Quotations\n"
+            "- Bad example (do NOT output): Workflow for RFQ and Quotations\nSupplier Transactions\nInvoice Processing\n"
             "- Output ONLY the labels."
         )
 

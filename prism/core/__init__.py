@@ -23,26 +23,14 @@ __all__ = [
     "ProcessModelAdapter",
     "DecompositionStrategy",
     "SubprocessLabeler",
-    # Main orchestrator
     "ProcessDecomposer",
-    # Strategy classes (for full customization)
     "EmbeddingClusteringStrategy",
-    "CutVertexStrategy",
-    "GatewayBasedStrategy",
-    "HierarchicalDecompositionStrategy",
-    "CommunityDetectionStrategy",
-    "SCCDecompositionStrategy",
-    # Factory functions (convenience)
     "embedding_strategy",
-    "community_strategy",
     "DecompositionStrategyFactory",
-    # configs
     "DecompositionConfig",
     "StrategyType",
-    # Labelers
     "LLMLabeler",
     "SimpleLabeler",
-    # Utilities
     "EmbeddingProvider",
     "cluster_size_quality",
 ]
